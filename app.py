@@ -401,9 +401,9 @@ def make_island_map(df, islands, selected_island_idx=None):
                 annotations.append(dict(
                     x=cx + CELL_W / 2,
                     y=cy - 6,
-                    text=f"<span style='font-size:7px;color:{text_color}88;'>{machine_no}</span>",
+                    text=str(machine_no),
                     showarrow=False,
-                    font=dict(size=7, color=text_color + "88" if len(text_color) == 7 else text_color),
+                    font=dict(size=7, color="#555555"),
                     xanchor="center",
                 ))
 
@@ -413,7 +413,7 @@ def make_island_map(df, islands, selected_island_idx=None):
                     y=cy - CELL_H / 2 - 4,
                     text=f"<b>{diff_text}</b>",
                     showarrow=False,
-                    font=dict(size=9, color=text_color),
+                    font=dict(size=9, color="#003820" if not np.isnan(diff) and diff >= 0 else "#ffffff"),
                     xanchor="center",
                 ))
 
