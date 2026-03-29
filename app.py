@@ -393,7 +393,7 @@ def make_island_map(df, islands, selected_island_idx=None):
                     x0=cx, y0=cy - CELL_H,
                     x1=cx + CELL_W, y1=cy,
                     fillcolor=bg_color,
-                    line=dict(color="#ffffff22" if not is_selected else "#00ffcc44", width=0.5),
+                    line=dict(color="rgba(255,255,255,0.13)" if not is_selected else "rgba(0,255,204,0.27)", width=0.5),
                     layer="below",
                 ))
 
