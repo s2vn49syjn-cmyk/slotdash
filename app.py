@@ -26,7 +26,7 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 # ★ 設定
 # ─────────────────────────────────────────────
-SPREADSHEET_ID = "1Hak9Q7Q_kjbp22A59pAUJ2twrEy4mdXk1sBfLYlynR8"
+SPREADSHEET_ID = "YOUR_SPREADSHEET_ID_HERE"
 SHEET_NAME = "スロデータ"
 
 # ─────────────────────────────────────────────
