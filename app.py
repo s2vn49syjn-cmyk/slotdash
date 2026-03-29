@@ -26,7 +26,7 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 # ★ 設定（書き換えてください）
 # ─────────────────────────────────────────────
-SPREADSHEET_ID = "1Hak9Q7Q_kjbp22A59pAUJ2twrEy4mdXk1sBfLYlynR8"
+SPREADSHEET_ID = "YOUR_SPREADSHEET_ID_HERE"
 SHEET_NAME = "スロデータ"
 
 # ─────────────────────────────────────────────
@@ -516,7 +516,7 @@ with tab_trend:
                         opacity=0.5, showlegend=False,
                     ))
 
-            fig.add_hline(y=0, line_dash="dash", line_color="#ffffff22")
+            fig.add_hline(y=0, line_dash="dash", line_color="rgba(255,255,255,0.13)")
             fig.update_layout(
                 height=320, paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1520",
                 font=dict(family="Noto Sans JP", color="#a0b0cc", size=11),
@@ -602,7 +602,7 @@ with tab_all:
                 marker_color=["#00ff88" if v >= 0 else "#ff4444" for v in vals],
                 opacity=0.8,
             ))
-            fig_h.add_vline(x=0, line_dash="dash", line_color="#ffffff44")
+            fig_h.add_vline(x=0, line_dash="dash", line_color="rgba(255,255,255,0.25)")
             fig_h.update_layout(
                 height=180, paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1520",
                 margin=dict(l=40,r=10,t=10,b=30),
