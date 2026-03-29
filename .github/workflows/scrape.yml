@@ -1,1 +1,31 @@
+name: みんレポ自動スクレイピング
 
+on:
+  schedule:
+    # 毎日午前9時（日本時間）に実行 ※UTC+9なので0時がJST9時
+    - cron: '0 0 * * *'
+  workflow_dispatch:  # 手動実行ボタンも追加
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Pythonセットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: ライブラリインストール
+        run: |
+          pip install requests beautifulsoup4 gspread google-auth
+
+      - name: スクレイピング実行
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+        run: |
+          python scraper_actions.py
