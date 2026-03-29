@@ -121,7 +121,14 @@ def scrape_and_save():
     # ④ 全機種URLを取得
     kishu_link = soup2.select_one("a.btn1[href*='?kishu=all']")
     if kishu_link:
-        kishu_url = kishu_link.get("href")
+        kishu_href = kishu_link.get("href")
+        # 相対URLを絶対URLに変換
+        if kishu_href and kishu_href.startswith("?"):
+            kishu_url = latest_url.split("?")[0].rstrip("/") + "/" + kishu_href
+        elif kishu_href and kishu_href.startswith("http"):
+            kishu_url = kishu_href
+        else:
+            kishu_url = "https://min-repo.com" + kishu_href
         print(f"全機種URL: {kishu_url}")
         time.sleep(2)
         html3 = fetch_page(kishu_url)
