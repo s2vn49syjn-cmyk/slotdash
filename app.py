@@ -67,10 +67,16 @@ html, body, [class*="css"] { background-color: #0a0e1a !important; color: #e0e6f
 # ユーティリティ
 # ─────────────────────────────────────────────
 def parse_num(val):
-    if pd.isna(val) or str(val).strip() in ["-", "", "None", "ー", "−"]:
-        return np.nan
-    s = str(val).strip().replace(",", "").replace("＋", "+").replace("－", "-")
-    m = re.search(r"[+-]?\d+", s)
+    if val is None: return np.nan
+    if isinstance(val, (int, float)):
+        try:
+            f = float(val)
+            return f if not (f != f) else np.nan  # NaN check
+        except: return np.nan
+    s = str(val).strip()
+    if s in ["-", "", "None", "ー", "−", "nan", "NaN"]: return np.nan
+    s = s.replace("，", ",").replace("＋", "+").replace("－", "-").replace("ー", "-").replace("−", "-").replace(",", "")
+    m = re.search(r"[+-]?\d+\.?\d*", s)
     return float(m.group()) if m else np.nan
 
 def diff_sign(val):
@@ -296,14 +302,21 @@ DEFAULT_ISLANDS = [
 ]
 
 def make_island_map(df, islands):
+    """島図をPlotlyで描画。1島ずつ選択時は大きく、全島は一覧表示"""
     diff_map = {}
+    name_map = {}
     for _, row in df.iterrows():
         if not np.isnan(row["台番"]):
-            diff_map[int(row["台番"])] = row["前日差枚"]
+            n = int(row["台番"])
+            diff_map[n] = row["前日差枚"]
+            name_map[n] = row["機種名"]
 
     shapes, annotations = [], []
-    CELL_W, CELL_H, GAP_X, GAP_Y = 50, 36, 16, 6
-    ISLAND_GAP_X, ISLAND_GAP_Y, COLS_PER_ROW = 50, 70, 5
+    # セルを大きくする
+    CELL_W, CELL_H = 70, 52
+    GAP_X, GAP_Y = 4, 4
+    ISLAND_GAP_X, ISLAND_GAP_Y = 30, 60
+    COLS_PER_ROW = 3  # 1行あたり3島まで
 
     positions, cur_x, cur_y, max_h = [], 0, 0, 0
     for i, isl in enumerate(islands):
@@ -316,36 +329,76 @@ def make_island_map(df, islands):
         if h > max_h: max_h = h
         cur_x += len(isl["rows"]) * (CELL_W + GAP_X) + ISLAND_GAP_X
 
-    total_w = max(p[0] for p in positions) + 600
-    total_h = abs(min(p[1] for p in positions)) + 300
+    total_w = max(p[0] for p in positions) + CELL_W * 5
+    total_h = abs(min(p[1] for p in positions)) + CELL_H * 5
 
     fig = go.Figure()
     fig.update_layout(
-        width=max(800, total_w), height=max(500, total_h),
-        paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1520",
-        showlegend=False, margin=dict(l=10,r=10,t=30,b=10),
-        xaxis=dict(visible=False, range=[-20, total_w]),
-        yaxis=dict(visible=False, range=[-total_h+50, 80]),
+        width=max(600, total_w),
+        height=max(400, total_h),
+        paper_bgcolor="#0a0e1a",
+        plot_bgcolor="#0d1520",
+        showlegend=False,
+        margin=dict(l=5, r=5, t=10, b=5),
+        xaxis=dict(visible=False, range=[-10, total_w]),
+        yaxis=dict(visible=False, range=[-total_h+30, 60]),
         hovermode="closest",
     )
 
     for isl, (ix, iy) in zip(islands, positions):
-        annotations.append(dict(x=ix, y=iy+18, text=f"<b>{isl['name']}</b>",
-            font=dict(size=9, color="#7a8aaa"), showarrow=False, xanchor="left"))
+        # 島ラベル
+        annotations.append(dict(
+            x=ix, y=iy+22,
+            text=f"<b>{isl['name']}</b>",
+            font=dict(size=11, color="#00ffcc"),
+            showarrow=False, xanchor="left"
+        ))
+
         for ci, col_machines in enumerate(isl["rows"]):
             cx = ix + ci * (CELL_W + GAP_X)
             for ri, mno in enumerate(col_machines):
                 cy = iy - ri * (CELL_H + GAP_Y)
                 diff = diff_map.get(mno, np.nan)
                 bg = diff_to_color(diff)
-                diff_text = diff_sign(diff) if not np.isnan(diff) else "?"
-                shapes.append(dict(type="rect", x0=cx, y0=cy-CELL_H, x1=cx+CELL_W, y1=cy,
-                    fillcolor=bg, line=dict(color="rgba(255,255,255,0.1)", width=0.5), layer="below"))
-                annotations.append(dict(x=cx+CELL_W/2, y=cy-7, text=str(mno),
-                    showarrow=False, font=dict(size=7, color="#444444"), xanchor="center"))
-                diff_color = "#003820" if not np.isnan(diff) and diff >= 0 else "#ffffff"
-                annotations.append(dict(x=cx+CELL_W/2, y=cy-CELL_H/2-3, text=f"<b>{diff_text}</b>",
-                    showarrow=False, font=dict(size=9, color=diff_color), xanchor="center"))
+
+                # プラスかマイナスかで文字色を決定
+                if np.isnan(diff):
+                    diff_text = "?"
+                    text_c = "#7a8aaa"
+                elif diff >= 0:
+                    diff_text = f"+{int(diff):,}"
+                    text_c = "#003820"
+                else:
+                    diff_text = f"{int(diff):,}"
+                    text_c = "#ffffff"
+
+                # セル背景
+                shapes.append(dict(
+                    type="rect",
+                    x0=cx, y0=cy - CELL_H,
+                    x1=cx + CELL_W, y1=cy,
+                    fillcolor=bg,
+                    line=dict(color="rgba(0,0,0,0.3)", width=1),
+                    layer="below"
+                ))
+
+                # 台番（上部）
+                annotations.append(dict(
+                    x=cx + CELL_W/2, y=cy - 10,
+                    text=str(mno),
+                    showarrow=False,
+                    font=dict(size=9, color="rgba(0,0,0,0.6)"),
+                    xanchor="center"
+                ))
+
+                # 差枚（中央・大きめ）
+                annotations.append(dict(
+                    x=cx + CELL_W/2, y=cy - CELL_H/2 - 4,
+                    text=f"<b>{diff_text}</b>",
+                    showarrow=False,
+                    font=dict(size=11, color=text_c),
+                    xanchor="center"
+                ))
 
     fig.update_layout(shapes=shapes, annotations=annotations)
     return fig
@@ -405,9 +458,12 @@ with tab_home:
         st.info("データを読み込み中です...")
     else:
         valid = df["前日差枚"].dropna()
+        # デバッグ：差枚の分布確認
+        minus_count = (valid < 0).sum()
+        plus_count = (valid > 0).sum()
         c1,c2,c3 = st.columns(3)
         c1.metric("総台数", f"{len(df)}台")
-        c2.metric("プラス台", f"{(valid>0).sum()}台")
+        c2.metric("プラス/マイナス", f"{plus_count}/{minus_count}")
         c3.metric("平均差枚", diff_sign(valid.mean()) if len(valid)>0 else "-")
 
         # アラートサマリ（ホームに小さく表示）
