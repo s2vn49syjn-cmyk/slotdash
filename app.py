@@ -444,10 +444,11 @@ DEFAULT_ISLANDS = [
     },
 ]
 
-def make_island_map(df, islands, target_machines=None):
+def make_island_map(df, islands, target_machines=None, diff_override=None):
     """
     島図をPlotlyで描画
     target_machines: 狙い台リスト（台番のset）- 枠線で強調表示
+    diff_override: {台番: 差枚} の辞書。指定時はこちらの値を使って色分け
     """
     diff_map = {}
     name_map = {}
@@ -456,6 +457,11 @@ def make_island_map(df, islands, target_machines=None):
             n = int(row["台番"])
             diff_map[n] = row["前日差枚"]
             name_map[n] = row["機種名"]
+
+    # 集計値が指定されていればdiff_mapを上書き
+    if diff_override:
+        for n, v in diff_override.items():
+            diff_map[n] = v
 
     if target_machines is None:
         target_machines = set()
@@ -520,11 +526,8 @@ def make_island_map(df, islands, target_machines=None):
                 else:
                     diff_text = f"{int(diff):,}"
 
-                # 枠線（狙い台は金色で強調）
-                if is_target:
-                    border_color = "#FFD700"
-                    border_w = 2.5
-                elif not np.isnan(diff) and diff <= -500:
+                # 枠線
+                if not np.isnan(diff) and diff <= -500:
                     border_color = "rgba(200,0,0,0.7)"
                     border_w = 1.5
                 else:
@@ -540,14 +543,33 @@ def make_island_map(df, islands, target_machines=None):
                     layer="below"
                 ))
 
-                # 狙い台マーク
+                # 狙い台：白い外枠＋金色内枠で二重枠にして目立たせる
                 if is_target:
+                    # 外側の白枠
+                    shapes.append(dict(
+                        type="rect",
+                        x0=cx - 3, y0=cy - CELL_H - 3,
+                        x1=cx + CELL_W + 3, y1=cy + 3,
+                        fillcolor="rgba(0,0,0,0)",
+                        line=dict(color="#ffffff", width=3),
+                        layer="above"
+                    ))
+                    # 内側の金枠
+                    shapes.append(dict(
+                        type="rect",
+                        x0=cx - 1, y0=cy - CELL_H - 1,
+                        x1=cx + CELL_W + 1, y1=cy + 1,
+                        fillcolor="rgba(0,0,0,0)",
+                        line=dict(color="#FFD700", width=2),
+                        layer="above"
+                    ))
+                    # 🎯マーク
                     annotations.append(dict(
-                        x=cx + CELL_W - 4, y=cy - 4,
+                        x=cx + CELL_W/2, y=cy + 10,
                         text="🎯",
                         showarrow=False,
-                        font=dict(size=8),
-                        xanchor="right"
+                        font=dict(size=11),
+                        xanchor="center"
                     ))
 
                 # 台番（上部）
@@ -870,9 +892,44 @@ with tab_island:
                 try: target_machines.add(int(k))
                 except: pass
 
+        # ── 期間切り替えボタン ──
+        st.markdown('<div style="font-size:0.75rem;color:#7a8aaa;margin-bottom:0.4rem;">表示期間を選択</div>', unsafe_allow_html=True)
+        period_cols = st.columns(3)
+        if "island_period" not in st.session_state:
+            st.session_state.island_period = "前日"
+        with period_cols[0]:
+            if st.button("📅 前日", use_container_width=True, key="period_1d"):
+                st.session_state.island_period = "前日"
+        with period_cols[1]:
+            if st.button("📅 直近3日", use_container_width=True, key="period_3d"):
+                st.session_state.island_period = "直近3日"
+        with period_cols[2]:
+            if st.button("📅 直近7日", use_container_width=True, key="period_7d"):
+                st.session_state.island_period = "直近7日"
+
+        period = st.session_state.island_period
+        st.markdown(f'<div style="font-size:0.7rem;color:#00ffcc;margin-bottom:0.6rem;">表示中: <b>{period}</b>の合計差枚</div>', unsafe_allow_html=True)
+
+        # 期間に応じた集計
+        diff_override = None
+        if period != "前日":
+            history, _ = load_history()
+            if history:
+                days = 3 if period == "直近3日" else 7
+                diff_override = {}
+                for num, date_dict in history.items():
+                    sorted_dates = sorted(date_dict.keys())
+                    recent = sorted_dates[-days:]
+                    vals = [date_dict[d]["diff"] for d in recent
+                            if not np.isnan(date_dict[d]["diff"])]
+                    if vals:
+                        diff_override[num] = sum(vals)
+            else:
+                st.info("履歴データがまだありません。前日データで表示します。")
+
         # 島図描画
         with st.spinner("島図描画中..."):
-            fig_map = make_island_map(df, display_islands, target_machines=target_machines)
+            fig_map = make_island_map(df, display_islands, target_machines=target_machines, diff_override=diff_override)
             st.plotly_chart(fig_map, use_container_width=True, config={
                 "displayModeBar": True, "displaylogo": False, "scrollZoom": True,
                 "modeBarButtonsToRemove": ["lasso2d","select2d"],
