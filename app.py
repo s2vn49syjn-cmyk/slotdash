@@ -307,19 +307,148 @@ def calc_alerts(df_today, history, stars):
 # 島定義
 # ─────────────────────────────────────────────
 DEFAULT_ISLANDS = [
-    {"name": "島A (801-820)", "rows": [[801,802,803,804,805,806,807,808,809,810],[811,812,813,814,815,816,817,818,819,820]]},
-    {"name": "島B (821-851)", "rows": [[821,822,823,824,825,826,827,828,829,830],[831,832,833,834,835,836,837,838,839,840],[841,842,843,844,845,846,847,848,849,850,851]]},
-    {"name": "島C (852-899)", "rows": [[852,853,854,855,856,857,858,859,860,861,862,863,864,865],[866,867,868,869,870,871,872,873,874,875,876,877,878,879],[880,881,882,883,884,885,886,887,888,889,890,891,892,893],[894,895,896,897,898,899]]},
-    {"name": "島D (901-940)", "rows": [[901,902,903,904,905,906,907,908,909,910],[911,912,913,914,915,916,917,918,919,920],[921,922,923,924,925,926,927,928,929,930],[931,932,933,934,935,936,937,938,939,940]]},
-    {"name": "島E (941-999)", "rows": [[941,942,943,944,945,946,947,948,949,950],[951,952,953,954,955,956,957,958,959,960],[961,962,963,964,965,966,967,968,969,970],[971,972,973,974,975,976,977,978,979,980],[981,982,983,984,985,986,987,988,989,990],[991,992,993,994,995,996,997,998,999]]},
-    {"name": "島F (1001-1060)", "rows": [[1001,1002,1003,1004,1005,1006,1007,1008,1009,1010],[1011,1012,1013,1014,1015,1016,1017,1018,1019,1020],[1021,1022,1023,1024,1025,1026,1027,1028,1029,1030],[1031,1032,1033,1034,1035,1036,1037,1038,1039,1040],[1041,1042,1043,1044,1045,1046,1047,1048,1049,1050],[1051,1052,1053,1054,1055,1056,1057,1058,1059,1060]]},
-    {"name": "島G (1061-1120)", "rows": [[1061,1062,1063,1064,1065,1066,1067,1068,1069,1070],[1071,1072,1073,1074,1075,1076,1077,1078,1079,1080],[1081,1082,1083,1084,1085,1086,1087,1088,1089,1090],[1091,1092,1093,1094,1095,1096,1097,1098,1099,1100],[1101,1102,1103,1104,1105,1106,1107,1108,1109,1110],[1111,1112,1113,1114,1115,1116,1117,1118,1119,1120]]},
-    {"name": "島H (1121-1220)", "rows": [[1121,1122,1123,1124,1125,1126,1127,1128,1129,1130],[1131,1132,1133,1134,1135,1136,1137,1138,1139,1140],[1141,1142,1143,1144,1145,1146,1147,1148,1149,1150],[1151,1152,1153,1154,1155,1156,1157,1158,1159,1160],[1161,1162,1163,1164,1165,1166,1167,1168,1169,1170],[1171,1172,1173,1174,1175,1176,1177,1178,1179,1180],[1181,1182,1183,1184,1185,1186,1187,1188,1189,1190],[1191,1192,1193,1194,1195,1196,1197,1198,1199,1200],[1201,1202,1203,1204,1205,1206,1207,1208,1209,1210],[1211,1212,1213,1214,1215,1216,1217,1218,1219,1220]]},
-    {"name": "島I (1221-1304)", "rows": [[1221,1222,1223,1224,1225,1226,1227,1228,1229,1230],[1231,1232,1233,1234,1235,1236,1237,1238,1239,1240],[1241,1242,1243,1244,1245,1246,1247,1248,1249,1250],[1251,1252,1253,1254,1255,1256,1257,1258,1259,1260],[1261,1262,1263,1264,1265,1266,1267,1268,1269,1270],[1271,1272,1273,1274,1275,1276,1277,1278,1279,1280],[1281,1282,1283,1284,1285,1286,1287,1288,1289,1290],[1291,1292,1293,1294,1295,1296,1297,1298,1299,1300],[1301,1302,1303,1304]]},
+    # ── 上段左エリア（800番台・縦配置） ──
+    {
+        "name": "800番台前半",
+        "pos": (0, 0),
+        "rows": [
+            [801,802,803,804,805,806,807,808,809,810],
+            [811,812,813,814,815,816,817,818,819,820],
+        ]
+    },
+    {
+        "name": "820番台",
+        "pos": (0, -1),
+        "rows": [
+            [821,822,823,824,825,826,827,828,829,830],
+            [831,832,833,834,835,836,837,838,839,840],
+            [841,842,843,844,845,846,847,848,849,850,851],
+        ]
+    },
+    # ── 上段中央エリア（900番台） ──
+    {
+        "name": "900番台A",
+        "pos": (1, 0),
+        "rows": [
+            [901,902,903,904,905,906,907,908,909,910],
+            [911,912,913,914,915,916,917,918,919,920],
+        ]
+    },
+    {
+        "name": "900番台B",
+        "pos": (1, -1),
+        "rows": [
+            [921,922,923,924,925,926,927,928,929,930],
+            [931,932,933,934,935,936,937,938,939,940],
+        ]
+    },
+    {
+        "name": "940番台",
+        "pos": (1, -2),
+        "rows": [
+            [941,942,943,944,945,946,947,948,949,950],
+            [951,952,953,954,955,956,957,958,959,960],
+            [961,962,963,964,965,966,967,968,969,970],
+        ]
+    },
+    # ── 上段右エリア（850〜899番台） ──
+    {
+        "name": "850番台",
+        "pos": (2, 0),
+        "rows": [
+            [852,853,854,855,856,857,858,859,860,861,862,863,864,865],
+            [866,867,868,869,870,871,872,873,874,875,876,877,878,879],
+            [880,881,882,883,884,885,886,887,888,889,890,891,892,893],
+            [894,895,896,897,898,899],
+        ]
+    },
+    # ── 中段（970〜1060番台） ──
+    {
+        "name": "970番台",
+        "pos": (0, -3),
+        "rows": [
+            [971,972,973,974,975,976,977,978,979,980],
+            [981,982,983,984,985,986,987,988,989,990],
+            [991,992,993,994,995,996,997,998,999],
+        ]
+    },
+    {
+        "name": "1000番台A",
+        "pos": (1, -3),
+        "rows": [
+            [1001,1002,1003,1004,1005,1006,1007,1008,1009,1010],
+            [1011,1012,1013,1014,1015,1016,1017,1018,1019,1020],
+            [1021,1022,1023,1024,1025,1026,1027,1028,1029,1030],
+        ]
+    },
+    {
+        "name": "1000番台B",
+        "pos": (2, -3),
+        "rows": [
+            [1031,1032,1033,1034,1035,1036,1037,1038,1039,1040],
+            [1041,1042,1043,1044,1045,1046,1047,1048,1049,1050],
+            [1051,1052,1053,1054,1055,1056,1057,1058,1059,1060],
+        ]
+    },
+    # ── 下段左（1060〜1120番台） ──
+    {
+        "name": "1060番台",
+        "pos": (0, -5),
+        "rows": [
+            [1061,1062,1063,1064,1065,1066,1067,1068,1069,1070],
+            [1071,1072,1073,1074,1075,1076,1077,1078,1079,1080],
+            [1081,1082,1083,1084,1085,1086,1087,1088,1089,1090],
+            [1091,1092,1093,1094,1095,1096,1097,1098,1099,1100],
+            [1101,1102,1103,1104,1105,1106,1107,1108,1109,1110],
+            [1111,1112,1113,1114,1115,1116,1117,1118,1119,1120],
+        ]
+    },
+    # ── 下段中央（1120〜1220番台） ──
+    {
+        "name": "1120番台",
+        "pos": (1, -5),
+        "rows": [
+            [1121,1122,1123,1124,1125,1126,1127,1128,1129,1130],
+            [1131,1132,1133,1134,1135,1136,1137,1138,1139,1140],
+            [1141,1142,1143,1144,1145,1146,1147,1148,1149,1150],
+            [1151,1152,1153,1154,1155,1156,1157,1158,1159,1160],
+            [1161,1162,1163,1164,1165,1166,1167,1168,1169,1170],
+            [1171,1172,1173,1174,1175,1176,1177,1178,1179,1180],
+        ]
+    },
+    # ── 下段右（1180〜1304番台） ──
+    {
+        "name": "1180番台",
+        "pos": (2, -5),
+        "rows": [
+            [1181,1182,1183,1184,1185,1186,1187,1188,1189,1190],
+            [1191,1192,1193,1194,1195,1196,1197,1198,1199,1200],
+            [1201,1202,1203,1204,1205,1206,1207,1208,1209,1210],
+            [1211,1212,1213,1214,1215,1216,1217,1218,1219,1220],
+        ]
+    },
+    {
+        "name": "1220番台",
+        "pos": (3, -5),
+        "rows": [
+            [1221,1222,1223,1224,1225,1226,1227,1228,1229,1230],
+            [1231,1232,1233,1234,1235,1236,1237,1238,1239,1240],
+            [1241,1242,1243,1244,1245,1246,1247,1248,1249,1250],
+            [1251,1252,1253,1254,1255,1256,1257,1258,1259,1260],
+            [1261,1262,1263,1264,1265,1266,1267,1268,1269,1270],
+            [1271,1272,1273,1274,1275,1276,1277,1278,1279,1280],
+            [1281,1282,1283,1284,1285,1286,1287,1288,1289,1290],
+            [1291,1292,1293,1294,1295,1296,1297,1298,1299,1300],
+            [1301,1302,1303,1304],
+        ]
+    },
 ]
 
-def make_island_map(df, islands):
-    """島図をPlotlyで描画。1島ずつ選択時は大きく、全島は一覧表示"""
+def make_island_map(df, islands, target_machines=None):
+    """
+    島図をPlotlyで描画
+    target_machines: 狙い台リスト（台番のset）- 枠線で強調表示
+    """
     diff_map = {}
     name_map = {}
     for _, row in df.iterrows():
@@ -328,46 +457,49 @@ def make_island_map(df, islands):
             diff_map[n] = row["前日差枚"]
             name_map[n] = row["機種名"]
 
+    if target_machines is None:
+        target_machines = set()
+
     shapes, annotations = [], []
-    # セルを大きくする
-    CELL_W, CELL_H = 70, 52
-    GAP_X, GAP_Y = 4, 4
-    ISLAND_GAP_X, ISLAND_GAP_Y = 30, 60
-    COLS_PER_ROW = 3  # 1行あたり3島まで
+    CELL_W, CELL_H = 62, 46
+    GAP_X, GAP_Y = 3, 3
+    # pos座標を実際のピクセル座標に変換するスケール
+    SCALE_X = 220  # 島間の横間隔
+    SCALE_Y = 550  # 島間の縦間隔
 
-    positions, cur_x, cur_y, max_h = [], 0, 0, 0
-    for i, isl in enumerate(islands):
-        if i % COLS_PER_ROW == 0 and i > 0:
-            cur_x = 0
-            cur_y -= max_h + ISLAND_GAP_Y
-            max_h = 0
-        positions.append((cur_x, cur_y))
-        h = max(len(col) for col in isl["rows"]) * (CELL_H + GAP_Y)
-        if h > max_h: max_h = h
-        cur_x += len(isl["rows"]) * (CELL_W + GAP_X) + ISLAND_GAP_X
+    # 各島の絶対座標を計算（pos指定ベース）
+    island_coords = []
+    for isl in islands:
+        pos = isl.get("pos", (0, 0))
+        ix = pos[0] * SCALE_X
+        iy = pos[1] * SCALE_Y
+        island_coords.append((ix, iy))
 
-    total_w = max(p[0] for p in positions) + CELL_W * 5
-    total_h = abs(min(p[1] for p in positions)) + CELL_H * 5
+    # 全体の範囲
+    all_x = [c[0] for c in island_coords]
+    all_y = [c[1] for c in island_coords]
+    total_w = max(all_x) + SCALE_X + 50
+    total_h = abs(min(all_y)) + SCALE_Y + 50
 
     fig = go.Figure()
     fig.update_layout(
-        width=max(600, total_w),
-        height=max(400, total_h),
+        width=max(700, total_w),
+        height=max(600, total_h),
         paper_bgcolor="#0a0e1a",
         plot_bgcolor="#0d1520",
         showlegend=False,
         margin=dict(l=5, r=5, t=10, b=5),
         xaxis=dict(visible=False, range=[-10, total_w]),
-        yaxis=dict(visible=False, range=[-total_h+30, 60]),
+        yaxis=dict(visible=False, range=[-total_h+30, 80]),
         hovermode="closest",
     )
 
-    for isl, (ix, iy) in zip(islands, positions):
+    for isl, (ix, iy) in zip(islands, island_coords):
         # 島ラベル
         annotations.append(dict(
-            x=ix, y=iy+22,
+            x=ix, y=iy + 22,
             text=f"<b>{isl['name']}</b>",
-            font=dict(size=11, color="#00ffcc"),
+            font=dict(size=10, color="#00ffcc"),
             showarrow=False, xanchor="left"
         ))
 
@@ -378,6 +510,7 @@ def make_island_map(df, islands):
                 diff = diff_map.get(mno, np.nan)
                 bg = diff_to_color(diff)
                 text_c = diff_to_text_color(diff)
+                is_target = mno in target_machines
 
                 # 差枚テキスト
                 if np.isnan(diff):
@@ -387,40 +520,58 @@ def make_island_map(df, islands):
                 else:
                     diff_text = f"{int(diff):,}"
 
-                # 枠線色（マイナス大は赤枠）
-                border_color = "rgba(200,0,0,0.8)" if not np.isnan(diff) and diff <= -500 else "rgba(0,0,0,0.25)"
+                # 枠線（狙い台は金色で強調）
+                if is_target:
+                    border_color = "#FFD700"
+                    border_w = 2.5
+                elif not np.isnan(diff) and diff <= -500:
+                    border_color = "rgba(200,0,0,0.7)"
+                    border_w = 1.5
+                else:
+                    border_color = "rgba(0,0,0,0.2)"
+                    border_w = 0.8
 
-                # セル背景
                 shapes.append(dict(
                     type="rect",
                     x0=cx, y0=cy - CELL_H,
                     x1=cx + CELL_W, y1=cy,
                     fillcolor=bg,
-                    line=dict(color=border_color, width=1.5),
+                    line=dict(color=border_color, width=border_w),
                     layer="below"
                 ))
+
+                # 狙い台マーク
+                if is_target:
+                    annotations.append(dict(
+                        x=cx + CELL_W - 4, y=cy - 4,
+                        text="🎯",
+                        showarrow=False,
+                        font=dict(size=8),
+                        xanchor="right"
+                    ))
 
                 # 台番（上部）
                 num_color = "#ffffff" if not np.isnan(diff) and diff >= 10000 else "rgba(0,0,0,0.55)"
                 annotations.append(dict(
-                    x=cx + CELL_W/2, y=cy - 10,
+                    x=cx + CELL_W/2, y=cy - 9,
                     text=str(mno),
                     showarrow=False,
                     font=dict(size=9, color=num_color),
                     xanchor="center"
                 ))
 
-                # 差枚（中央・大きめ）
+                # 差枚（中央）
                 annotations.append(dict(
-                    x=cx + CELL_W/2, y=cy - CELL_H/2 - 4,
+                    x=cx + CELL_W/2, y=cy - CELL_H/2 - 3,
                     text=f"<b>{diff_text}</b>",
                     showarrow=False,
-                    font=dict(size=11, color=text_c),
+                    font=dict(size=10, color=text_c),
                     xanchor="center"
                 ))
 
     fig.update_layout(shapes=shapes, annotations=annotations)
     return fig
+
 
 # ─────────────────────────────────────────────
 # セッションステート
@@ -691,38 +842,118 @@ with tab_island:
         st.info("データを読み込み中です...")
     else:
         st.markdown('<div class="section-title">🗺 島図</div>', unsafe_allow_html=True)
-        st.markdown("""<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:0.8rem;font-size:0.68rem;">
-          <span style="background:#ffffff;color:#CC0000;border:1.5px solid #CC0000;padding:2px 6px;border-radius:3px;font-weight:bold;">-500↓</span>
-          <span style="background:#ffffff;color:#333;border:1px solid #ccc;padding:2px 6px;border-radius:3px;">-499〜-1</span>
-          <span style="background:#f0f0f0;color:#999;border:1px solid #ccc;padding:2px 6px;border-radius:3px;">0</span>
-          <span style="background:#88CCEE;color:#333;padding:2px 6px;border-radius:3px;">+1〜999</span>
-          <span style="background:#DDDD00;color:#333;padding:2px 6px;border-radius:3px;">+1000〜</span>
-          <span style="background:#66BB44;color:#fff;padding:2px 6px;border-radius:3px;">+2000〜</span>
-          <span style="background:#CC44CC;color:#fff;padding:2px 6px;border-radius:3px;">+3000〜</span>
-          <span style="background:#CC0000;color:#fff;padding:2px 6px;border-radius:3px;">+4000〜</span>
-          <span style="background:#8B0000;color:#fff;padding:2px 6px;border-radius:3px;">+5000〜</span>
-          <span style="background:#111;color:#FF4444;padding:2px 6px;border-radius:3px;font-weight:bold;">+10000↑</span>
+
+        # カラー凡例
+        st.markdown("""<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:0.6rem;font-size:0.68rem;">
+          <span style="background:#fff;color:#CC0000;border:1.5px solid #CC0000;padding:2px 5px;border-radius:3px;font-weight:bold;">-500↓</span>
+          <span style="background:#fff;color:#333;border:1px solid #ccc;padding:2px 5px;border-radius:3px;">〜-1</span>
+          <span style="background:#f0f0f0;color:#999;border:1px solid #ccc;padding:2px 5px;border-radius:3px;">0</span>
+          <span style="background:#88CCEE;color:#333;padding:2px 5px;border-radius:3px;">+1〜</span>
+          <span style="background:#DDDD00;color:#333;padding:2px 5px;border-radius:3px;">+1000〜</span>
+          <span style="background:#66BB44;color:#fff;padding:2px 5px;border-radius:3px;">+2000〜</span>
+          <span style="background:#CC44CC;color:#fff;padding:2px 5px;border-radius:3px;">+3000〜</span>
+          <span style="background:#CC0000;color:#fff;padding:2px 5px;border-radius:3px;">+4000〜</span>
+          <span style="background:#8B0000;color:#fff;padding:2px 5px;border-radius:3px;">+5000〜</span>
+          <span style="background:#111;color:#FF4444;padding:2px 5px;border-radius:3px;">+10000↑</span>
+          <span style="background:#0a0e1a;color:#FFD700;border:2px solid #FFD700;padding:2px 5px;border-radius:3px;">🎯狙い台</span>
         </div>""", unsafe_allow_html=True)
 
+        # 島選択
         island_names = ["全島表示"] + [isl["name"] for isl in islands]
         sel_island = st.selectbox("島を選択", island_names)
         display_islands = [islands[island_names.index(sel_island)-1]] if sel_island != "全島表示" else islands
 
-        with st.spinner("島図描画中..."):
-            fig_map = make_island_map(df, display_islands)
-            st.plotly_chart(fig_map, use_container_width=True, config={"displayModeBar":True,"displaylogo":False,"scrollZoom":True})
+        # 狙い台セット（星印台を自動反映）
+        target_machines = set()
+        for k, v in st.session_state.stars.items():
+            if v:
+                try: target_machines.add(int(k))
+                except: pass
 
+        # 島図描画
+        with st.spinner("島図描画中..."):
+            fig_map = make_island_map(df, display_islands, target_machines=target_machines)
+            st.plotly_chart(fig_map, use_container_width=True, config={
+                "displayModeBar": True, "displaylogo": False, "scrollZoom": True,
+                "modeBarButtonsToRemove": ["lasso2d","select2d"],
+            })
+
+        # ── 狙い台登録エリア ──
+        st.markdown('<div class="section-title">🎯 狙い台登録</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:0.75rem;color:#7a8aaa;margin-bottom:0.6rem;">台番を入力して狙い台に登録。島図上で金色枠で表示されます。</div>', unsafe_allow_html=True)
+
+        # 島が選択されている場合は台番リストを表示
         if sel_island != "全島表示":
             isl = islands[island_names.index(sel_island)-1]
             all_machines = [m for col in isl["rows"] for m in col]
             island_df = df[df["台番"].apply(lambda x: int(x) if not np.isnan(x) else -1).isin(all_machines)].copy()
+
             if not island_df.empty:
                 island_df = island_df.sort_values("前日差枚", ascending=False)
-                disp = island_df[["台番","機種名","前日差枚","スコア"]].copy()
-                disp["台番"] = disp["台番"].apply(lambda x: int(x) if not np.isnan(x) else "?")
-                disp["前日差枚"] = disp["前日差枚"].apply(diff_sign)
-                disp["スコア"] = disp["スコア"].apply(lambda x: f"{x:.0f}")
-                st.dataframe(disp, hide_index=True, use_container_width=True, height=280)
+
+                st.markdown('<div style="font-size:0.75rem;color:#00ffcc;margin-bottom:0.4rem;">この島の台一覧（タップで狙い台登録）</div>', unsafe_allow_html=True)
+
+                # 台ごとにボタン表示（5列）
+                machine_list = island_df[["台番","機種名","前日差枚"]].values.tolist()
+                cols_per_row = 3
+                for i in range(0, len(machine_list), cols_per_row):
+                    row_machines = machine_list[i:i+cols_per_row]
+                    btn_cols = st.columns(cols_per_row)
+                    for j, (台番_f, 機種, diff_v) in enumerate(row_machines):
+                        台番_n = int(台番_f) if not np.isnan(台番_f) else None
+                        if 台番_n is None: continue
+                        台番_str = str(台番_n)
+                        is_starred = st.session_state.stars.get(台番_str, False)
+                        diff_display = diff_sign(diff_v) if not np.isnan(diff_v) else "?"
+                        # 色
+                        if not np.isnan(diff_v) and diff_v >= 1000:
+                            btn_style = "color:#003820;"
+                        elif not np.isnan(diff_v) and diff_v <= -500:
+                            btn_style = "color:#CC0000;"
+                        else:
+                            btn_style = ""
+                        star_mark = "🎯" if is_starred else ""
+                        label = f"{star_mark}#{台番_n} {diff_display}"
+                        with btn_cols[j]:
+                            if st.button(label, key=f"island_btn_{台番_n}", use_container_width=True):
+                                st.session_state.stars[台番_str] = not is_starred
+                                st.rerun()
+
+        # 手動入力エリア
+        st.markdown('<div style="margin-top:0.8rem;"></div>', unsafe_allow_html=True)
+        inp_col1, inp_col2 = st.columns([2,1])
+        with inp_col1:
+            manual_input = st.text_input("台番を直接入力", placeholder="例: 1147", key="island_manual_input")
+        with inp_col2:
+            st.markdown("<div style='margin-top:1.6rem;'></div>", unsafe_allow_html=True)
+            if st.button("🎯 登録", use_container_width=True, key="island_manual_btn"):
+                try:
+                    num = int(manual_input.strip())
+                    台番_str = str(num)
+                    st.session_state.stars[台番_str] = True
+                    st.success(f"台番 {num} を狙い台に登録しました！")
+                    st.rerun()
+                except:
+                    st.error("正しい台番を入力してください")
+
+        # 現在の狙い台一覧
+        current_targets = [(k, v) for k, v in st.session_state.stars.items() if v]
+        if current_targets:
+            st.markdown('<div class="section-title">🎯 現在の狙い台</div>', unsafe_allow_html=True)
+            target_cols = st.columns(4)
+            for i, (台番_str, _) in enumerate(current_targets):
+                matched = df[df["台番"].apply(lambda x: str(int(x)) if not np.isnan(x) else "") == 台番_str]
+                diff = matched.iloc[0]["前日差枚"] if len(matched) > 0 else np.nan
+                機種 = matched.iloc[0]["機種名"] if len(matched) > 0 else "?"
+                with target_cols[i % 4]:
+                    st.markdown(f"""<div style="background:#111828;border:1.5px solid #FFD700;border-radius:8px;padding:6px;text-align:center;margin-bottom:6px;">
+                      <div style="font-size:0.65rem;color:#FFD700;">🎯 #{台番_str}</div>
+                      <div style="font-size:0.7rem;color:#c8d8f0;">{機種[:6]}</div>
+                      <div style="font-family:'Orbitron',monospace;font-size:0.8rem;color:{'#00ff88' if not np.isnan(diff) and diff>=0 else '#ff4444'};">{diff_sign(diff)}</div>
+                    </div>""", unsafe_allow_html=True)
+                    if st.button("✕", key=f"remove_target_{台番_str}", use_container_width=True):
+                        st.session_state.stars[台番_str] = False
+                        st.rerun()
 
 # ════════════════════════════════════════════
 # 📈 トレンドタブ
