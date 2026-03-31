@@ -104,15 +104,32 @@ def calc_score(diff, week_avg, trend_up):
     return float(np.clip(score, 0, 100))
 
 def diff_to_color(val):
-    if np.isnan(val): return "rgba(30,45,69,0.8)"
-    if val >= 3000: return "rgba(0,200,100,0.95)"
-    if val >= 1500: return "rgba(0,220,120,0.85)"
-    if val >= 500: return "rgba(100,220,150,0.75)"
-    if val >= 0: return "rgba(150,230,180,0.65)"
-    if val >= -500: return "rgba(255,180,100,0.70)"
-    if val >= -1500: return "rgba(255,120,80,0.80)"
-    if val >= -3000: return "rgba(255,80,60,0.88)"
-    return "rgba(220,40,40,0.95)"
+    """PDFの凡例に合わせた色設定"""
+    if np.isnan(val): return "#f0f0f0"        # 白（未表示）
+    if val >= 10000: return "#111111"          # 黒背景（+10000以上）
+    if val >= 5000: return "#8B0000"           # 濃い赤（+5000〜+9999）
+    if val >= 4000: return "#CC0000"           # 赤（+4000〜+4999）
+    if val >= 3000: return "#CC44CC"           # 紫（+3000〜+3999）
+    if val >= 2000: return "#66BB44"           # 黄緑（+2000〜+2999）
+    if val >= 1000: return "#DDDD00"           # 黄色（+1000〜+1999）
+    if val >= 1: return "#88CCEE"              # 水色（+1〜+999）
+    if val == 0: return "#f0f0f0"              # 白（0・未表示）
+    if val >= -499: return "#ffffff"           # 白（-1〜-499）
+    return "#ffffff"                           # 白枠（-500以下）
+
+def diff_to_text_color(val):
+    """PDFの凡例に合わせたテキスト色"""
+    if np.isnan(val): return "#999999"
+    if val >= 10000: return "#FF4444"          # 黒背景→赤文字
+    if val >= 5000: return "#ffffff"           # 白文字
+    if val >= 4000: return "#ffffff"           # 白文字
+    if val >= 3000: return "#ffffff"           # 白文字
+    if val >= 2000: return "#ffffff"           # 白文字
+    if val >= 1000: return "#333333"           # 黒文字
+    if val >= 1: return "#333333"              # 黒文字
+    if val == 0: return "#999999"              # グレー文字
+    if val >= -499: return "#333333"           # 黒文字（小マイナス）
+    return "#CC0000"                           # 赤文字（大マイナス）
 
 # ─────────────────────────────────────────────
 # Google Sheets: 最新シート読み込み
@@ -360,17 +377,18 @@ def make_island_map(df, islands):
                 cy = iy - ri * (CELL_H + GAP_Y)
                 diff = diff_map.get(mno, np.nan)
                 bg = diff_to_color(diff)
+                text_c = diff_to_text_color(diff)
 
-                # プラスかマイナスかで文字色を決定
+                # 差枚テキスト
                 if np.isnan(diff):
                     diff_text = "?"
-                    text_c = "#7a8aaa"
                 elif diff >= 0:
                     diff_text = f"+{int(diff):,}"
-                    text_c = "#003820"
                 else:
                     diff_text = f"{int(diff):,}"
-                    text_c = "#ffffff"
+
+                # 枠線色（マイナス大は赤枠）
+                border_color = "rgba(200,0,0,0.8)" if not np.isnan(diff) and diff <= -500 else "rgba(0,0,0,0.25)"
 
                 # セル背景
                 shapes.append(dict(
@@ -378,16 +396,17 @@ def make_island_map(df, islands):
                     x0=cx, y0=cy - CELL_H,
                     x1=cx + CELL_W, y1=cy,
                     fillcolor=bg,
-                    line=dict(color="rgba(0,0,0,0.3)", width=1),
+                    line=dict(color=border_color, width=1.5),
                     layer="below"
                 ))
 
                 # 台番（上部）
+                num_color = "#ffffff" if not np.isnan(diff) and diff >= 10000 else "rgba(0,0,0,0.55)"
                 annotations.append(dict(
                     x=cx + CELL_W/2, y=cy - 10,
                     text=str(mno),
                     showarrow=False,
-                    font=dict(size=9, color="rgba(0,0,0,0.6)"),
+                    font=dict(size=9, color=num_color),
                     xanchor="center"
                 ))
 
@@ -672,13 +691,17 @@ with tab_island:
         st.info("データを読み込み中です...")
     else:
         st.markdown('<div class="section-title">🗺 島図</div>', unsafe_allow_html=True)
-        st.markdown("""<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:0.8rem;font-size:0.7rem;">
-          <span style="background:rgba(0,200,100,0.9);color:#003820;padding:2px 8px;border-radius:4px;font-weight:bold;">+3000↑</span>
-          <span style="background:rgba(100,220,150,0.8);color:#003820;padding:2px 8px;border-radius:4px;">+500〜</span>
-          <span style="background:rgba(150,230,180,0.65);color:#003820;padding:2px 8px;border-radius:4px;">0〜</span>
-          <span style="background:rgba(255,180,100,0.7);color:#5a2000;padding:2px 8px;border-radius:4px;">〜-500</span>
-          <span style="background:rgba(255,80,60,0.88);color:#fff;padding:2px 8px;border-radius:4px;">〜-1500</span>
-          <span style="background:rgba(220,40,40,0.95);color:#fff;padding:2px 8px;border-radius:4px;">-3000↓</span>
+        st.markdown("""<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:0.8rem;font-size:0.68rem;">
+          <span style="background:#ffffff;color:#CC0000;border:1.5px solid #CC0000;padding:2px 6px;border-radius:3px;font-weight:bold;">-500↓</span>
+          <span style="background:#ffffff;color:#333;border:1px solid #ccc;padding:2px 6px;border-radius:3px;">-499〜-1</span>
+          <span style="background:#f0f0f0;color:#999;border:1px solid #ccc;padding:2px 6px;border-radius:3px;">0</span>
+          <span style="background:#88CCEE;color:#333;padding:2px 6px;border-radius:3px;">+1〜999</span>
+          <span style="background:#DDDD00;color:#333;padding:2px 6px;border-radius:3px;">+1000〜</span>
+          <span style="background:#66BB44;color:#fff;padding:2px 6px;border-radius:3px;">+2000〜</span>
+          <span style="background:#CC44CC;color:#fff;padding:2px 6px;border-radius:3px;">+3000〜</span>
+          <span style="background:#CC0000;color:#fff;padding:2px 6px;border-radius:3px;">+4000〜</span>
+          <span style="background:#8B0000;color:#fff;padding:2px 6px;border-radius:3px;">+5000〜</span>
+          <span style="background:#111;color:#FF4444;padding:2px 6px;border-radius:3px;font-weight:bold;">+10000↑</span>
         </div>""", unsafe_allow_html=True)
 
         island_names = ["全島表示"] + [isl["name"] for isl in islands]
