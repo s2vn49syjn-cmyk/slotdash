@@ -871,22 +871,38 @@ with tab_home:
             bot5["前日差枚"] = bot5["前日差枚"].apply(diff_sign)
             st.dataframe(bot5, hide_index=True, use_container_width=True, height=210)
 
-                    # ── 全台一覧（クイックフィルタ適用後） ──
+        # ── 全台一覧（クイックフィルタ適用後） ──
         st.markdown('<div class="section-title">📋 全台一覧</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:0.82rem;color:#00ffcc;margin-bottom:0.6rem;">フィルタ: {af}　表示: {len(df_display)} 台</div>', unsafe_allow_html=True)
 
+        # 表示用データフレーム作成
         disp = df_display[["台番", "機種名", "前日差枚", "スコア"]].copy()
+        
         disp["台番"] = disp["台番"].apply(lambda x: int(x) if not np.isnan(x) else "?")
         disp["前日差枚"] = disp["前日差枚"].apply(diff_sign)
         disp["スコア"] = disp["スコア"].apply(lambda x: f"{x:.0f}" if not np.isnan(x) else "-")
 
-        # 直近合計を表示
-        if af in ["直近3日合計", "直近7日合計"] and 'summary_df' in locals():
-            col_name = "直近3日合計" if af == "直近3日合計" else "直近7日合計"
-            temp = summary_df[["台番", col_name]].copy()
+        # 直近3日合計 / 直近7日合計 を選択している場合は、その列を追加してソート基準にする
+        if af == "直近3日合計" and 'summary_df' in locals():
+            temp = summary_df[["台番", "直近3日合計"]].copy()
             disp = disp.merge(temp, on="台番", how="left")
-            disp[col_name] = disp[col_name].apply(diff_sign)
+            disp["直近3日合計"] = disp["直近3日合計"].apply(diff_sign)
+            # 表示列の順番を調整
+            disp = disp[["台番", "機種名", "直近3日合計", "前日差枚", "スコア"]]
 
-        st.dataframe(disp, hide_index=True, use_container_width=True, height=650)
+        elif af == "直近7日合計" and 'summary_df' in locals():
+            temp = summary_df[["台番", "直近7日合計"]].copy()
+            disp = disp.merge(temp, on="台番", how="left")
+            disp["直近7日合計"] = disp["直近7日合計"].apply(diff_sign)
+            disp = disp[["台番", "機種名", "直近7日合計", "前日差枚", "スコア"]]
+
+        # テーブル表示
+        st.dataframe(
+            disp, 
+            hide_index=True, 
+            use_container_width=True, 
+            height=650
+        )
 
 # ════════════════════════════════════════════
 # 🔔 アラートタブ
