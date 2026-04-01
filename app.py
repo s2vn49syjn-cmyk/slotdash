@@ -160,28 +160,33 @@ def load_latest_sheet():
     except Exception as e:
         return None, str(e)
 
-@st.cache_data(ttl=300)
-def load_history(max_days=7):
-    """直近7日分の履歴を読み込み（3日/7日集計に最適化）"""
+@st.cache_data(ttl=180)  # 3分キャッシュ
+def load_history(max_days=10):   # 10日分まで取得できるように拡張
+    """直近10日分の履歴を取得（日付シートが少ない場合も対応）"""
     try:
         client = get_gspread_client()
         spreadsheet = client.open_by_key(SPREADSHEET_ID)
         all_ws = spreadsheet.worksheets()
         
-        # 日付シートを新しい順に取得
-        date_sheets = sorted(
-            [ws for ws in all_ws if re.match(r"\d{4}-\d{2}-\d{2}", ws.title)],
-            key=lambda w: w.title, reverse=True
-        )[:max_days]
+        # 日付形式のシートをすべて抽出して新しい順にソート
+        date_sheets = []
+        for ws in all_ws:
+            if re.match(r"\d{4}-\d{2}-\d{2}", ws.title):
+                date_sheets.append(ws)
+        
+        date_sheets = sorted(date_sheets, key=lambda w: w.title, reverse=True)[:max_days]
         
         history = {}
         date_labels = [ws.title for ws in date_sheets]
+        
+        st.info(f"📅 履歴データ: {len(date_labels)}日分取得 ({', '.join(date_labels[:5])}...)")  # デバッグ用（後で消してもOK）
         
         for ws in date_sheets:
             try:
                 data = ws.get_all_records()
                 if not data:
                     continue
+                    
                 df = pd.DataFrame(data)
                 cols = {c.strip(): c for c in df.columns}
                 
@@ -191,9 +196,9 @@ def load_history(max_days=7):
                             if k in c: return cols[c]
                     return None
                 
-                台番col = fc("台番", "台no")
-                差枚col = fc("差枚", "前日差枚")
-                回転col = fc("回転数", "回転", "G数")
+                台番col = fc("台番", "台no", "No")
+                差枚col = fc("差枚", "前日差枚", "差枚数")
+                回転col = fc("回転数", "回転", "G数", "ゲーム数")
                 
                 if not 台番col or not 差枚col:
                     continue
@@ -209,9 +214,11 @@ def load_history(max_days=7):
                         history[num][ws.title] = {"diff": diff, "rot": rot}
                     except:
                         continue
-            except:
+            except Exception as e:
                 continue
+                
         return history, date_labels
+        
     except Exception as e:
         st.warning(f"履歴読み込みエラー: {e}")
         return {}, []
@@ -844,6 +851,25 @@ with tab_home:
             bot5["台番"] = bot5["台番"].apply(lambda x: int(x) if not np.isnan(x) else "?")
             bot5["前日差枚"] = bot5["前日差枚"].apply(diff_sign)
             st.dataframe(bot5, hide_index=True, use_container_width=True, height=210)
+
+                    # ── 全台一覧（クイックフィルタ適用後） ──
+        st.markdown('<div class="section-title">📋 全台一覧（フィルタ適用）</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:0.8rem;color:#7a8aaa;margin-bottom:0.6rem;">表示台数: {len(df_display)} 台</div>', unsafe_allow_html=True)
+
+        # 表示用のデータ整形
+        disp = df_display[["台番", "機種名", "前日差枚", "スコア"]].copy()
+        disp["台番"] = disp["台番"].apply(lambda x: int(x) if not np.isnan(x) else "?")
+        disp["前日差枚"] = disp["前日差枚"].apply(diff_sign)
+        disp["スコア"] = disp["スコア"].apply(lambda x: f"{x:.0f}" if not np.isnan(x) else "-")
+
+        # 直近3日・7日が適用されている場合は追加列を表示
+        if af in ["直近3日好調", "直近7日好調"] and 'summary_df' in locals():
+            col_name = "直近3日合計" if af == "直近3日好調" else "直近7日合計"
+            temp = summary_df[["台番", col_name]].copy()
+            disp = disp.merge(temp, on="台番", how="left")
+            disp[col_name] = disp[col_name].apply(diff_sign)
+
+        st.dataframe(disp, hide_index=True, use_container_width=True, height=600)
 
 # ════════════════════════════════════════════
 # 🔔 アラートタブ
