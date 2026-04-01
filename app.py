@@ -649,13 +649,13 @@ with tab_home:
         valid = df["前日差枚"].dropna()
         minus_count = (valid < 0).sum()
         plus_count = (valid > 0).sum()
-        
+       
         c1, c2, c3 = st.columns(3)
         c1.metric("総台数", f"{len(df)}台")
         c2.metric("プラス/マイナス", f"{plus_count}/{minus_count}")
         c3.metric("平均差枚", diff_sign(valid.mean()) if len(valid) > 0 else "-")
 
-        # ── 新規追加：直近傾向まとめ（朝イチ参考） ──
+        # ── 直近傾向まとめ（朝イチ参考） ──
         st.markdown('<div class="section-title">📅 直近傾向まとめ（朝イチ参考）</div>', unsafe_allow_html=True)
         
         history, date_labels = load_history()
@@ -663,29 +663,24 @@ with tab_home:
         if history and len(date_labels) >= 3:
             summary_data = []
             for _, row in df.iterrows():
-                if np.isnan(row["台番"]): 
+                if np.isnan(row["台番"]):
                     continue
                 num = int(row["台番"])
                 machine_hist = history.get(num, {})
-                
+               
                 sorted_dates = sorted(machine_hist.keys(), reverse=True)
-                
-                # 直近3日合計差枚
+               
                 recent3 = sorted_dates[:3]
-                sum3 = sum(machine_hist[d]["diff"] for d in recent3 
-                          if not np.isnan(machine_hist[d]["diff"]))
-                
-                # 直近7日合計差枚
+                sum3 = sum(machine_hist[d]["diff"] for d in recent3 if not np.isnan(machine_hist[d]["diff"]))
+               
                 recent7 = sorted_dates[:7]
-                sum7 = sum(machine_hist[d]["diff"] for d in recent7 
-                          if not np.isnan(machine_hist[d]["diff"]))
-                
-                # 連日高回転（直近3日で600G以上）
+                sum7 = sum(machine_hist[d]["diff"] for d in recent7 if not np.isnan(machine_hist[d]["diff"]))
+               
                 rots_recent = [machine_hist[d].get("rot", np.nan) for d in recent3]
                 valid_rots = [r for r in rots_recent if not np.isnan(r)]
                 high_rot_days = len([r for r in valid_rots if r >= 600])
                 avg_rot = round(np.mean(valid_rots)) if valid_rots else np.nan
-                
+               
                 summary_data.append({
                     "台番": num,
                     "機種名": row["機種名"],
@@ -695,12 +690,10 @@ with tab_home:
                     "平均回転(3日)": avg_rot if not np.isnan(avg_rot) else "-",
                     "前日差枚": row["前日差枚"]
                 })
-            
+           
             summary_df = pd.DataFrame(summary_data)
-            
-            # 1. 直近3日・7日 好調台 TOP5（横並び）
+           
             col3, col7 = st.columns(2)
-            
             with col3:
                 st.markdown('<div style="font-size:0.82rem;color:#00ffcc;margin-bottom:4px;">📈 直近3日間 好調台 TOP5</div>', unsafe_allow_html=True)
                 top3 = summary_df.nlargest(5, "直近3日合計")[["台番", "機種名", "直近3日合計", "前日差枚"]].copy()
@@ -716,11 +709,10 @@ with tab_home:
                 top7["直近7日合計"] = top7["直近7日合計"].apply(diff_sign)
                 top7["前日差枚"] = top7["前日差枚"].apply(diff_sign)
                 st.dataframe(top7, hide_index=True, use_container_width=True, height=220)
-            
-            # 2. 連日高回転台リスト
+           
             st.markdown('<div class="section-title">🔄 連日高回転台（朝イチ据え置き期待）</div>', unsafe_allow_html=True)
             high_rot_df = summary_df[summary_df["高回転日数(3日)"] >= 2].sort_values("高回転日数(3日)", ascending=False)
-            
+           
             if not high_rot_df.empty:
                 high_disp = high_rot_df[["台番", "機種名", "高回転日数(3日)", "平均回転(3日)", "直近3日合計"]].head(12).copy()
                 high_disp["台番"] = high_disp["台番"].astype(int)
@@ -728,52 +720,60 @@ with tab_home:
                 st.dataframe(high_disp, hide_index=True, use_container_width=True, height=320)
             else:
                 st.info("直近3日間で高回転（600G以上）が続いている台はまだありません。")
-            
-            # 便利ボタン
+           
             if st.button("🌟 上位好調台をすべて星印に登録（3日+7日トップ各5台）", use_container_width=True):
                 top_nums = set(summary_df.nlargest(5, "直近3日合計")["台番"]) | \
                            set(summary_df.nlargest(5, "直近7日合計")["台番"])
                 for n in top_nums:
                     st.session_state.stars[str(int(n))] = True
-                st.success(f"{len(top_nums)}台を星印に登録しました！ 島図で確認できます。")
+                st.success(f"{len(top_nums)}台を星印に登録しました！")
                 st.rerun()
-        
+       
         else:
             st.info("📅 直近傾向まとめは、3日以上の履歴データが蓄積されると表示されます。")
 
-        # ── ここから元のコード（アラートサマリ、おすすめカード、ランキングなど） ──
-        # アラートサマリ
-        alerts, hold_candidates = calc_alerts(df, history, st.session_state.stars)
-        if alerts:
-            # （既存のアラートバッジ表示部分はそのまま）
-            alert_counts = {"cold":0,"hot":0,"danger":0,"star":0}
-            for a in alerts: 
-                alert_counts[a["type"]] = alert_counts.get(a["type"],0)+1
-            badges = ""
-            if alert_counts["danger"]: badges += f'<span class="badge badge-danger">⚠️ 大幅凹み {alert_counts["danger"]}件</span>'
-            if alert_counts["cold"]: badges += f'<span class="badge" style="background:#1a1a3a;color:#8888ff;border:1px solid #8888ff44;">❄️ 連続凹み {alert_counts["cold"]}件</span>'
-            if alert_counts["hot"]: badges += f'<span class="badge badge-hot">🔥 好調継続 {alert_counts["hot"]}件</span>'
-            if alert_counts["star"]: badges += f'<span class="badge badge-star">⭐ 注目台変動 {alert_counts["star"]}件</span>'
-            st.markdown(f'<div style="margin-bottom:0.8rem;">{badges}</div>', unsafe_allow_html=True)
-
-        # クイックフィルタ
+        # ── クイックフィルタ（強化版） ──
         st.markdown('<div class="section-title">クイックフィルタ</div>', unsafe_allow_html=True)
-        filters = ["全台","前日凹み","前日プラス","ジャグラー","⭐星印"]
+        
+        filters = ["全台", "前日凹み", "前日プラス", "直近3日好調", "直近7日好調", "ジャグラー", "⭐星印"]
         fcols = st.columns(len(filters))
-        for i,f in enumerate(filters):
+        
+        for i, f in enumerate(filters):
             if fcols[i].button(f, key=f"qf_{f}"):
                 st.session_state.active_filter = f
+                st.rerun()   # 即時反映
 
         af = st.session_state.active_filter
-        df_sorted = df.dropna(subset=["前日差枚"]).sort_values("前日差枚", ascending=False)
-        if af=="前日凹み": df_sorted = df_sorted[df_sorted["前日差枚"]<0].sort_values("前日差枚")
-        elif af=="前日プラス": df_sorted = df_sorted[df_sorted["前日差枚"]>0]
-        elif af=="ジャグラー": df_sorted = df_sorted[df_sorted["is_juggler"]]
-        elif af=="⭐星印":
-            starred = [k for k,v in st.session_state.stars.items() if v]
-            df_sorted = df_sorted[df_sorted["台番"].apply(lambda x: str(int(x)) if not np.isnan(x) else "").isin(starred)]
 
-        # おすすめカード
+        # フィルタ適用ロジック
+        if af == "全台":
+            df_sorted = df.dropna(subset=["前日差枚"]).sort_values("前日差枚", ascending=False)
+        elif af == "前日凹み":
+            df_sorted = df[df["前日差枚"] < 0].sort_values("前日差枚")
+        elif af == "前日プラス":
+            df_sorted = df[df["前日差枚"] > 0].sort_values("前日差枚", ascending=False)
+        elif af == "直近3日好調":
+            if 'summary_df' in locals():
+                df_sorted = summary_df.nlargest(30, "直近3日合計").copy()  # 上位30台
+                df_sorted = df_sorted.merge(df[["台番", "機種名", "前日差枚", "スコア"]], on="台番", how="left")
+            else:
+                df_sorted = df.dropna(subset=["前日差枚"]).sort_values("前日差枚", ascending=False)
+        elif af == "直近7日好調":
+            if 'summary_df' in locals():
+                df_sorted = summary_df.nlargest(30, "直近7日合計").copy()
+                df_sorted = df_sorted.merge(df[["台番", "機種名", "前日差枚", "スコア"]], on="台番", how="left")
+            else:
+                df_sorted = df.dropna(subset=["前日差枚"]).sort_values("前日差枚", ascending=False)
+        elif af == "ジャグラー":
+            df_sorted = df[df["is_juggler"]].sort_values("前日差枚", ascending=False)
+        elif af == "⭐星印":
+            starred = [k for k, v in st.session_state.stars.items() if v]
+            df_sorted = df[df["台番"].apply(lambda x: str(int(x)) if not np.isnan(x) else "").isin(starred)]
+            df_sorted = df_sorted.sort_values("前日差枚", ascending=False)
+        else:
+            df_sorted = df.dropna(subset=["前日差枚"]).sort_values("前日差枚", ascending=False)
+
+        # おすすめカード（そのまま）
         st.markdown('<div class="section-title">⭐ おすすめ台</div>', unsafe_allow_html=True)
         card_df = pd.concat([df.nlargest(3,"前日差枚"), df.nsmallest(2,"前日差枚")]).drop_duplicates()
         for idx, row in card_df.iterrows():
@@ -784,14 +784,13 @@ with tab_home:
             is_hot = diff > 0 if not np.isnan(diff) else True
             台番_str = str(int(row["台番"])) if not np.isnan(row["台番"]) else "?"
             is_starred = st.session_state.stars.get(台番_str, False)
-
             badges = ""
             if not np.isnan(diff):
                 if diff > 2000: badges += '<span class="badge badge-hot">🔥 好調</span>'
                 elif diff < -2000: badges += '<span class="badge badge-cold">❄ 凹み狙い</span>'
             if is_starred: badges += '<span class="badge badge-star">⭐ 注目</span>'
             if row["is_juggler"]: badges += '<span class="badge badge-juggler">🎰 ジャグ</span>'
-
+            
             st.markdown(f"""<div class="card {'card-hot' if is_hot else 'card-cold'}">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;">
                 <div><div class="machine-num">台番 {台番_str}</div>
@@ -804,17 +803,19 @@ with tab_home:
                   <span>スコア</span><span style="color:{sc};">{score:.0f}/100</span></div>
                 <div class="score-bar-wrap"><div class="score-bar-fill" style="width:{score}%;background:linear-gradient(90deg,{sc}88,{sc});"></div></div>
               </div></div>""", unsafe_allow_html=True)
-
+            
             btn_c1, btn_c2 = st.columns([1,3])
             with btn_c1:
                 star_icon = "⭐" if is_starred else "☆"
                 if st.button(f"{star_icon} 星", key=f"star_home_{idx}"):
-                    st.session_state.stars[台番_str] = not is_starred; st.rerun()
+                    st.session_state.stars[台番_str] = not is_starred
+                    st.rerun()
             with btn_c2:
                 memo = st.session_state.memos.get(台番_str, "")
-                if memo: st.markdown(f'<div class="memo-box">📝 {memo}</div>', unsafe_allow_html=True)
+                if memo: 
+                    st.markdown(f'<div class="memo-box">📝 {memo}</div>', unsafe_allow_html=True)
 
-        # ランキング
+        # ランキング（そのまま）
         st.markdown('<div class="section-title">📊 差枚ランキング</div>', unsafe_allow_html=True)
         ct, cb = st.columns(2)
         with ct:
