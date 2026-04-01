@@ -1035,7 +1035,7 @@ with tab_island:
         st.info("データを読み込み中です...")
     else:
         st.markdown('<div class="section-title">🗺 島図</div>', unsafe_allow_html=True)
-
+        
         # カラー凡例
         st.markdown("""<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:0.6rem;font-size:0.68rem;">
           <span style="background:#fff;color:#CC0000;border:1.5px solid #CC0000;padding:2px 5px;border-radius:3px;font-weight:bold;">-500↓</span>
@@ -1056,14 +1056,18 @@ with tab_island:
         sel_island = st.selectbox("島を選択", island_names)
         display_islands = [islands[island_names.index(sel_island)-1]] if sel_island != "全島表示" else islands
 
-        # 狙い台セット（星印台を自動反映）
+        # ★★★ 狙い台（星印）の取得を確実にする ★★★
         target_machines = set()
         for k, v in st.session_state.stars.items():
             if v:
-                try: target_machines.add(int(k))
-                except: pass
+                try:
+                    target_machines.add(int(k))
+                except:
+                    pass
 
-        # ── 期間切り替えボタン ──
+        st.markdown(f'<div style="font-size:0.75rem;color:#ffd700;margin-bottom:0.4rem;">🎯 現在の狙い台: {len(target_machines)} 台</div>', unsafe_allow_html=True)
+
+        # 期間切り替え
         st.markdown('<div style="font-size:0.75rem;color:#7a8aaa;margin-bottom:0.4rem;">表示期間を選択</div>', unsafe_allow_html=True)
         period_cols = st.columns(3)
         if "island_period" not in st.session_state:
@@ -1079,9 +1083,9 @@ with tab_island:
                 st.session_state.island_period = "直近7日"
 
         period = st.session_state.island_period
-        st.markdown(f'<div style="font-size:0.7rem;color:#00ffcc;margin-bottom:0.6rem;">表示中: <b>{period}</b>の合計差枚</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:0.7rem;color:#00ffcc;margin-bottom:0.6rem;">表示中: <b>{period}</b></div>', unsafe_allow_html=True)
 
-        # 期間に応じた集計
+        # 期間ごとの差枚上書き
         diff_override = None
         if period != "前日":
             history, _ = load_history()
@@ -1091,19 +1095,23 @@ with tab_island:
                 for num, date_dict in history.items():
                     sorted_dates = sorted(date_dict.keys())
                     recent = sorted_dates[-days:]
-                    vals = [date_dict[d]["diff"] for d in recent
-                            if not np.isnan(date_dict[d]["diff"])]
+                    vals = [date_dict[d]["diff"] for d in recent if not np.isnan(date_dict[d]["diff"])]
                     if vals:
                         diff_override[num] = sum(vals)
-            else:
-                st.info("履歴データがまだありません。前日データで表示します。")
 
-        # 島図描画
-        with st.spinner("島図描画中..."):
-            fig_map = make_island_map(df, display_islands, target_machines=target_machines, diff_override=diff_override)
+        # 島図描画（狙い台を確実に渡す）
+        with st.spinner("島図を描画中..."):
+            fig_map = make_island_map(
+                df, 
+                display_islands, 
+                target_machines=target_machines,   # ← これが重要
+                diff_override=diff_override
+            )
             st.plotly_chart(fig_map, use_container_width=True, config={
-                "displayModeBar": True, "displaylogo": False, "scrollZoom": True,
-                "modeBarButtonsToRemove": ["lasso2d","select2d"],
+                "displayModeBar": True, 
+                "displaylogo": False, 
+                "scrollZoom": True,
+                "modeBarButtonsToRemove": ["lasso2d", "select2d"]
             })
 
         # ── 狙い台登録エリア ──
