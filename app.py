@@ -161,45 +161,49 @@ def load_latest_sheet():
         return None, str(e)
 
 @st.cache_data(ttl=300)
-def load_history():
-    """直近7日分の履歴を読み込む {台番: {日付: {diff, rot}}}"""
+def load_history(max_days=7):
+    """直近7日分の履歴を読み込み（3日/7日集計に最適化）"""
     try:
         client = get_gspread_client()
         spreadsheet = client.open_by_key(SPREADSHEET_ID)
         all_ws = spreadsheet.worksheets()
-        date_sheets = sorted([ws for ws in all_ws if re.match(r"\d{4}-\d{2}-\d{2}", ws.title)], key=lambda w: w.title)
-        recent = date_sheets[-7:]
-        if not recent:
-            return {}, []
-
+        
+        # 日付シートを新しい順に取得
+        date_sheets = sorted(
+            [ws for ws in all_ws if re.match(r"\d{4}-\d{2}-\d{2}", ws.title)],
+            key=lambda w: w.title, reverse=True
+        )[:max_days]
+        
         history = {}
-        date_labels = [ws.title for ws in recent]
-
-        for ws in recent:
+        date_labels = [ws.title for ws in date_sheets]
+        
+        for ws in date_sheets:
             try:
                 data = ws.get_all_records()
                 if not data:
                     continue
                 df = pd.DataFrame(data)
                 cols = {c.strip(): c for c in df.columns}
-
+                
                 def fc(*keys):
                     for k in keys:
                         for c in cols:
                             if k in c: return cols[c]
                     return None
-
+                
                 台番col = fc("台番", "台no")
                 差枚col = fc("差枚", "前日差枚")
                 回転col = fc("回転数", "回転", "G数")
+                
                 if not 台番col or not 差枚col:
                     continue
-
+                
                 for _, row in df.iterrows():
                     try:
-                        num = int(float(str(row[台番col]).replace(",", "")))
+                        num = int(parse_num(row[台番col]))
                         diff = parse_num(row[差枚col])
                         rot = parse_num(row[回転col]) if 回転col else np.nan
+                        
                         if num not in history:
                             history[num] = {}
                         history[num][ws.title] = {"diff": diff, "rot": rot}
@@ -207,9 +211,9 @@ def load_history():
                         continue
             except:
                 continue
-
         return history, date_labels
     except Exception as e:
+        st.warning(f"履歴読み込みエラー: {e}")
         return {}, []
 
 def process_df(df_raw):
@@ -643,20 +647,108 @@ with tab_home:
         st.info("データを読み込み中です...")
     else:
         valid = df["前日差枚"].dropna()
-        # デバッグ：差枚の分布確認
         minus_count = (valid < 0).sum()
         plus_count = (valid > 0).sum()
-        c1,c2,c3 = st.columns(3)
+        
+        c1, c2, c3 = st.columns(3)
         c1.metric("総台数", f"{len(df)}台")
         c2.metric("プラス/マイナス", f"{plus_count}/{minus_count}")
-        c3.metric("平均差枚", diff_sign(valid.mean()) if len(valid)>0 else "-")
+        c3.metric("平均差枚", diff_sign(valid.mean()) if len(valid) > 0 else "-")
 
-        # アラートサマリ（ホームに小さく表示）
+        # ── 新規追加：直近傾向まとめ（朝イチ参考） ──
+        st.markdown('<div class="section-title">📅 直近傾向まとめ（朝イチ参考）</div>', unsafe_allow_html=True)
+        
         history, date_labels = load_history()
+        
+        if history and len(date_labels) >= 3:
+            summary_data = []
+            for _, row in df.iterrows():
+                if np.isnan(row["台番"]): 
+                    continue
+                num = int(row["台番"])
+                machine_hist = history.get(num, {})
+                
+                sorted_dates = sorted(machine_hist.keys(), reverse=True)
+                
+                # 直近3日合計差枚
+                recent3 = sorted_dates[:3]
+                sum3 = sum(machine_hist[d]["diff"] for d in recent3 
+                          if not np.isnan(machine_hist[d]["diff"]))
+                
+                # 直近7日合計差枚
+                recent7 = sorted_dates[:7]
+                sum7 = sum(machine_hist[d]["diff"] for d in recent7 
+                          if not np.isnan(machine_hist[d]["diff"]))
+                
+                # 連日高回転（直近3日で600G以上）
+                rots_recent = [machine_hist[d].get("rot", np.nan) for d in recent3]
+                valid_rots = [r for r in rots_recent if not np.isnan(r)]
+                high_rot_days = len([r for r in valid_rots if r >= 600])
+                avg_rot = round(np.mean(valid_rots)) if valid_rots else np.nan
+                
+                summary_data.append({
+                    "台番": num,
+                    "機種名": row["機種名"],
+                    "直近3日合計": sum3,
+                    "直近7日合計": sum7,
+                    "高回転日数(3日)": high_rot_days,
+                    "平均回転(3日)": avg_rot if not np.isnan(avg_rot) else "-",
+                    "前日差枚": row["前日差枚"]
+                })
+            
+            summary_df = pd.DataFrame(summary_data)
+            
+            # 1. 直近3日・7日 好調台 TOP5（横並び）
+            col3, col7 = st.columns(2)
+            
+            with col3:
+                st.markdown('<div style="font-size:0.82rem;color:#00ffcc;margin-bottom:4px;">📈 直近3日間 好調台 TOP5</div>', unsafe_allow_html=True)
+                top3 = summary_df.nlargest(5, "直近3日合計")[["台番", "機種名", "直近3日合計", "前日差枚"]].copy()
+                top3["台番"] = top3["台番"].astype(int)
+                top3["直近3日合計"] = top3["直近3日合計"].apply(diff_sign)
+                top3["前日差枚"] = top3["前日差枚"].apply(diff_sign)
+                st.dataframe(top3, hide_index=True, use_container_width=True, height=220)
+            
+            with col7:
+                st.markdown('<div style="font-size:0.82rem;color:#00ffcc;margin-bottom:4px;">📈 直近7日間 好調台 TOP5</div>', unsafe_allow_html=True)
+                top7 = summary_df.nlargest(5, "直近7日合計")[["台番", "機種名", "直近7日合計", "前日差枚"]].copy()
+                top7["台番"] = top7["台番"].astype(int)
+                top7["直近7日合計"] = top7["直近7日合計"].apply(diff_sign)
+                top7["前日差枚"] = top7["前日差枚"].apply(diff_sign)
+                st.dataframe(top7, hide_index=True, use_container_width=True, height=220)
+            
+            # 2. 連日高回転台リスト
+            st.markdown('<div class="section-title">🔄 連日高回転台（朝イチ据え置き期待）</div>', unsafe_allow_html=True)
+            high_rot_df = summary_df[summary_df["高回転日数(3日)"] >= 2].sort_values("高回転日数(3日)", ascending=False)
+            
+            if not high_rot_df.empty:
+                high_disp = high_rot_df[["台番", "機種名", "高回転日数(3日)", "平均回転(3日)", "直近3日合計"]].head(12).copy()
+                high_disp["台番"] = high_disp["台番"].astype(int)
+                high_disp["直近3日合計"] = high_disp["直近3日合計"].apply(diff_sign)
+                st.dataframe(high_disp, hide_index=True, use_container_width=True, height=320)
+            else:
+                st.info("直近3日間で高回転（600G以上）が続いている台はまだありません。")
+            
+            # 便利ボタン
+            if st.button("🌟 上位好調台をすべて星印に登録（3日+7日トップ各5台）", use_container_width=True):
+                top_nums = set(summary_df.nlargest(5, "直近3日合計")["台番"]) | \
+                           set(summary_df.nlargest(5, "直近7日合計")["台番"])
+                for n in top_nums:
+                    st.session_state.stars[str(int(n))] = True
+                st.success(f"{len(top_nums)}台を星印に登録しました！ 島図で確認できます。")
+                st.rerun()
+        
+        else:
+            st.info("📅 直近傾向まとめは、3日以上の履歴データが蓄積されると表示されます。")
+
+        # ── ここから元のコード（アラートサマリ、おすすめカード、ランキングなど） ──
+        # アラートサマリ
         alerts, hold_candidates = calc_alerts(df, history, st.session_state.stars)
         if alerts:
+            # （既存のアラートバッジ表示部分はそのまま）
             alert_counts = {"cold":0,"hot":0,"danger":0,"star":0}
-            for a in alerts: alert_counts[a["type"]] = alert_counts.get(a["type"],0)+1
+            for a in alerts: 
+                alert_counts[a["type"]] = alert_counts.get(a["type"],0)+1
             badges = ""
             if alert_counts["danger"]: badges += f'<span class="badge badge-danger">⚠️ 大幅凹み {alert_counts["danger"]}件</span>'
             if alert_counts["cold"]: badges += f'<span class="badge" style="background:#1a1a3a;color:#8888ff;border:1px solid #8888ff44;">❄️ 連続凹み {alert_counts["cold"]}件</span>'
