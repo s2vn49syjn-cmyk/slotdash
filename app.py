@@ -732,7 +732,7 @@ with tab_home:
         else:
             st.info("📅 直近傾向まとめは、3日以上の履歴データが蓄積されると表示されます。")
 
-        # ── クイックフィルタ（強化版） ──
+         # ── クイックフィルタ（強化版） ──
         st.markdown('<div class="section-title">クイックフィルタ</div>', unsafe_allow_html=True)
         
         filters = ["全台", "前日凹み", "前日プラス", "直近3日好調", "直近7日好調", "ジャグラー", "⭐星印"]
@@ -741,37 +741,47 @@ with tab_home:
         for i, f in enumerate(filters):
             if fcols[i].button(f, key=f"qf_{f}"):
                 st.session_state.active_filter = f
-                st.rerun()   # 即時反映
+                st.rerun()
 
         af = st.session_state.active_filter
 
-        # フィルタ適用ロジック
+        # === ここからフィルタ適用ロジック ===
         if af == "全台":
-            df_sorted = df.dropna(subset=["前日差枚"]).sort_values("前日差枚", ascending=False)
+            df_display = df.dropna(subset=["前日差枚"]).sort_values("前日差枚", ascending=False)
         elif af == "前日凹み":
-            df_sorted = df[df["前日差枚"] < 0].sort_values("前日差枚")
+            df_display = df[df["前日差枚"] < 0].sort_values("前日差枚")
         elif af == "前日プラス":
-            df_sorted = df[df["前日差枚"] > 0].sort_values("前日差枚", ascending=False)
+            df_display = df[df["前日差枚"] > 0].sort_values("前日差枚", ascending=False)
         elif af == "直近3日好調":
-            if 'summary_df' in locals():
-                df_sorted = summary_df.nlargest(30, "直近3日合計").copy()  # 上位30台
-                df_sorted = df_sorted.merge(df[["台番", "機種名", "前日差枚", "スコア"]], on="台番", how="left")
+            if 'summary_df' in locals() and not summary_df.empty:
+                temp = summary_df.nlargest(50, "直近3日合計").copy()   # 上位50台まで
+                df_display = temp.merge(df[["台番", "機種名", "前日差枚", "スコア", "is_juggler"]], 
+                                      on="台番", how="left")
             else:
-                df_sorted = df.dropna(subset=["前日差枚"]).sort_values("前日差枚", ascending=False)
+                df_display = df.dropna(subset=["前日差枚"]).sort_values("前日差枚", ascending=False)
         elif af == "直近7日好調":
-            if 'summary_df' in locals():
-                df_sorted = summary_df.nlargest(30, "直近7日合計").copy()
-                df_sorted = df_sorted.merge(df[["台番", "機種名", "前日差枚", "スコア"]], on="台番", how="left")
+            if 'summary_df' in locals() and not summary_df.empty:
+                temp = summary_df.nlargest(50, "直近7日合計").copy()
+                df_display = temp.merge(df[["台番", "機種名", "前日差枚", "スコア", "is_juggler"]], 
+                                      on="台番", how="left")
             else:
-                df_sorted = df.dropna(subset=["前日差枚"]).sort_values("前日差枚", ascending=False)
+                df_display = df.dropna(subset=["前日差枚"]).sort_values("前日差枚", ascending=False)
         elif af == "ジャグラー":
-            df_sorted = df[df["is_juggler"]].sort_values("前日差枚", ascending=False)
+            df_display = df[df["is_juggler"]].sort_values("前日差枚", ascending=False)
         elif af == "⭐星印":
             starred = [k for k, v in st.session_state.stars.items() if v]
-            df_sorted = df[df["台番"].apply(lambda x: str(int(x)) if not np.isnan(x) else "").isin(starred)]
-            df_sorted = df_sorted.sort_values("前日差枚", ascending=False)
+            df_display = df[df["台番"].apply(lambda x: str(int(x)) if not np.isnan(x) else "").isin(starred)]
+            df_display = df_display.sort_values("前日差枚", ascending=False)
         else:
-            df_sorted = df.dropna(subset=["前日差枚"]).sort_values("前日差枚", ascending=False)
+            df_display = df.dropna(subset=["前日差枚"]).sort_values("前日差枚", ascending=False)
+
+        # フィルタ結果の件数表示
+        st.markdown(f'<div style="font-size:0.8rem;color:#7a8aaa;margin-bottom:0.6rem;">表示中: {len(df_display)} 台</div>', unsafe_allow_html=True)
+
+        # ── おすすめカード（df_display ではなく全台から抽出のままでもOK） ──
+        st.markdown('<div class="section-title">⭐ おすすめ台</div>', unsafe_allow_html=True)
+        card_df = pd.concat([df.nlargest(3,"前日差枚"), df.nsmallest(2,"前日差枚")]).drop_duplicates()
+        # （おすすめカード部分は変更なし・元のコードのまま）
 
         # おすすめカード（そのまま）
         st.markdown('<div class="section-title">⭐ おすすめ台</div>', unsafe_allow_html=True)
