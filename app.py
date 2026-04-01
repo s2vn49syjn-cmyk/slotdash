@@ -871,34 +871,46 @@ with tab_home:
             bot5["前日差枚"] = bot5["前日差枚"].apply(diff_sign)
             st.dataframe(bot5, hide_index=True, use_container_width=True, height=210)
 
-        # ── 全台一覧（クイックフィルタ適用後） ──
+        # ── 全台一覧（クイックフィルタ適用後・列名を正しく切り替える） ──
         st.markdown('<div class="section-title">📋 全台一覧</div>', unsafe_allow_html=True)
-        st.markdown(f'<div style="font-size:0.82rem;color:#00ffcc;margin-bottom:0.6rem;">フィルタ: {af}　表示: {len(df_display)} 台</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:0.82rem;color:#00ffcc;margin-bottom:0.8rem;">フィルタ: <b>{af}</b>　　表示台数: {len(df_display)} 台</div>', unsafe_allow_html=True)
 
-        # 表示用データフレーム作成
-        disp = df_display[["台番", "機種名", "前日差枚", "スコア"]].copy()
-        
-        disp["台番"] = disp["台番"].apply(lambda x: int(x) if not np.isnan(x) else "?")
-        disp["前日差枚"] = disp["前日差枚"].apply(diff_sign)
-        disp["スコア"] = disp["スコア"].apply(lambda x: f"{x:.0f}" if not np.isnan(x) else "-")
-
-        # 直近3日合計 / 直近7日合計 を選択している場合は、その列を追加してソート基準にする
-        if af == "直近3日合計" and 'summary_df' in locals():
-            temp = summary_df[["台番", "直近3日合計"]].copy()
-            disp = disp.merge(temp, on="台番", how="left")
+        # 表示用データフレーム
+        if af == "直近3日合計" and 'summary_df' in locals() and not summary_df.empty:
+            # 直近3日合計モード
+            disp = summary_df[["台番", "機種名", "直近3日合計", "前日差枚"]].copy()
+            disp = disp.merge(df[["台番", "スコア", "is_juggler"]], on="台番", how="left")
+            disp = disp.sort_values("直近3日合計", ascending=False)
+            disp["台番"] = disp["台番"].apply(lambda x: int(x) if not np.isnan(x) else "?")
             disp["直近3日合計"] = disp["直近3日合計"].apply(diff_sign)
-            # 表示列の順番を調整
-            disp = disp[["台番", "機種名", "直近3日合計", "前日差枚", "スコア"]]
-
-        elif af == "直近7日合計" and 'summary_df' in locals():
-            temp = summary_df[["台番", "直近7日合計"]].copy()
-            disp = disp.merge(temp, on="台番", how="left")
+            disp["前日差枚"] = disp["前日差枚"].apply(diff_sign)
+            disp["スコア"] = disp["スコア"].apply(lambda x: f"{x:.0f}" if not np.isnan(x) else "-")
+            
+            column_order = ["台番", "機種名", "直近3日合計", "前日差枚", "スコア"]
+            
+        elif af == "直近7日合計" and 'summary_df' in locals() and not summary_df.empty:
+            # 直近7日合計モード
+            disp = summary_df[["台番", "機種名", "直近7日合計", "前日差枚"]].copy()
+            disp = disp.merge(df[["台番", "スコア", "is_juggler"]], on="台番", how="left")
+            disp = disp.sort_values("直近7日合計", ascending=False)
+            disp["台番"] = disp["台番"].apply(lambda x: int(x) if not np.isnan(x) else "?")
             disp["直近7日合計"] = disp["直近7日合計"].apply(diff_sign)
-            disp = disp[["台番", "機種名", "直近7日合計", "前日差枚", "スコア"]]
+            disp["前日差枚"] = disp["前日差枚"].apply(diff_sign)
+            disp["スコア"] = disp["スコア"].apply(lambda x: f"{x:.0f}" if not np.isnan(x) else "-")
+            
+            column_order = ["台番", "機種名", "直近7日合計", "前日差枚", "スコア"]
+            
+        else:
+            # その他のフィルタ（前日差枚など）
+            disp = df_display[["台番", "機種名", "前日差枚", "スコア"]].copy()
+            disp["台番"] = disp["台番"].apply(lambda x: int(x) if not np.isnan(x) else "?")
+            disp["前日差枚"] = disp["前日差枚"].apply(diff_sign)
+            disp["スコア"] = disp["スコア"].apply(lambda x: f"{x:.0f}" if not np.isnan(x) else "-")
+            column_order = ["台番", "機種名", "前日差枚", "スコア"]
 
-        # テーブル表示
+        # 最終表示
         st.dataframe(
-            disp, 
+            disp[column_order], 
             hide_index=True, 
             use_container_width=True, 
             height=650
