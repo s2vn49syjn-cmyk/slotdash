@@ -13,15 +13,17 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
 
-TARGET_URL = "https://min-repo.com/tag/スーパーコスモプレミアム堺店/"
+TARGET_URL = "https://min-repo.com/tag/%E3%82%B9%E3%83%BC%E3%83%91%E3%83%BC%E3%82%B3%E3%82%B9%E3%83%A2%E3%83%97%E3%83%AC%E3%83%9F%E3%82%A2%E3%83%A0%E5%A0%BA%E5%BA%97/"
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "")
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": "ja,en-US;q=0.7,en;q=0.3",
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ja-JP,ja;q=0.9",
     "Accept-Encoding": "gzip, deflate, br",
     "Connection": "keep-alive",
+    "Referer": "https://min-repo.com/",
+    "Upgrade-Insecure-Requests": "1",
 }
 
 def connect_spreadsheet():
@@ -130,18 +132,26 @@ def parse_cell(cell):
 
     return val
 
-def fetch_page(url, retries=3):
+def fetch_page(url, retries=5):
     for i in range(retries):
         try:
             session = requests.Session()
-            res = session.get(url, headers=HEADERS, timeout=30)
+            # セッションごとにヘッダーをセット
+            session.headers.update(HEADERS)
+            res = session.get(url, timeout=30, allow_redirects=True)
             res.encoding = "utf-8"
+            print(f"  ステータス: {res.status_code} ({url[:60]})")
             if res.status_code == 200:
                 return res.text
-            print(f"ステータス {res.status_code}: {url}")
+            elif res.status_code == 403:
+                print(f"  アクセス拒否(403) - {i+1}回目")
+                time.sleep(10 * (i + 1))
+            else:
+                print(f"  エラー: {res.status_code}")
+                time.sleep(5)
         except Exception as e:
-            print(f"リトライ {i+1}/{retries}: {e}")
-            time.sleep(5)
+            print(f"  リトライ {i+1}/{retries}: {e}")
+            time.sleep(8)
     return None
 
 def scrape_and_save(target_date=None):
