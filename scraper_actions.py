@@ -265,13 +265,18 @@ def scrape_and_save(target_date=None):
         if not cells:
             continue
 
-        # デバッグ: 230〜235行目あたり（マイナス台が出始める境界）を表示
+        # デバッグ: 230行目付近の差枚セルのHTML全体を表示
         diff_idx = col_map.get("差枚", -1)
-        if 225 <= debug_shown <= 235:
+        if 228 <= debug_shown <= 232:
             all_texts = [c.get_text(strip=True) for c in cells]
             print(f"[DEBUG行{debug_shown+1}] 全テキスト={all_texts}")
             if diff_idx >= 0 and diff_idx < len(cells):
-                print(f"  差枚HTML: {str(cells[diff_idx])[:400]}")
+                # HTML全体を制限なしで表示
+                full_html = str(cells[diff_idx])
+                print(f"  差枚HTML全体: {full_html}")
+                # 親要素も確認
+                parent_html = str(cells[diff_idx].parent)[:600]
+                print(f"  親行HTML: {parent_html}")
         debug_shown += 1
 
         row_data = {}
