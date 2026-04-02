@@ -163,9 +163,80 @@ def scrape_and_save(target_date=None):
                     row_data[key] = ""
             data_rows.append(row_data)
 
+        # ⑥ 不明台（差枚が空）を個別ページで補完
+        unknown_rows = [r for r in data_rows if r.get("差枚") == ""]
+        print(f"不明台数: {len(unknown_rows)}台 → 個別ページで補完します")
+
+        if unknown_rows:
+            base_url = report_url.rstrip("/").split("?")[0]
+            补完_count = 0
+            error_count = 0
+
+            for r in unknown_rows:
+                台番 = r.get("台番", "")
+                if not 台番:
+                    continue
+                num = int(台番) if isinstance(台番, float) else int(str(台番).strip())
+                indiv_url = f"{base_url}/?num={num}"
+
+                try:
+                    page.goto(indiv_url, wait_until="domcontentloaded", timeout=30000)
+                    time.sleep(1)
+
+                    # 差枚を取得（個別ページのHTML構造に合わせて取得）
+                    # まずテーブルから探す
+                    diff_val = None
+
+                    # 方法1: samai_cellクラスから数値を探す
+                    cells = page.query_selector_all("td.samai_cell")
+                    for cell in cells:
+                        txt = cell.inner_text().strip()
+                        if txt and txt != "-" and re.search(r"[0-9]", txt):
+                            parsed = to_num(txt)
+                            if isinstance(parsed, float):
+                                diff_val = parsed
+                                break
+
+                    # 方法2: 差枚というラベルの隣のセルを探す
+                    if diff_val is None:
+                        all_cells = page.query_selector_all("td, th")
+                        for i, cell in enumerate(all_cells):
+                            txt = cell.inner_text().strip()
+                            if "差枚" in txt:
+                                # 次のセルを取得
+                                try:
+                                    next_cells = page.query_selector_all("td, th")
+                                    if i + 1 < len(next_cells):
+                                        next_txt = next_cells[i+1].inner_text().strip()
+                                        parsed = to_num(next_txt)
+                                        if isinstance(parsed, float):
+                                            diff_val = parsed
+                                            break
+                                except:
+                                    pass
+
+                    if diff_val is not None:
+                        r["差枚"] = diff_val
+                        补完_count += 1
+                        if 补完_count <= 5:  # 最初の5台をログ表示
+                            print(f"  補完: 台番{num} 差枚={diff_val}")
+                    else:
+                        error_count += 1
+                        if error_count <= 3:
+                            # ページ内容を確認
+                            page_text = page.inner_text("body")[:300]
+                            print(f"  取得失敗: 台番{num} ページ内容={repr(page_text[:100])}")
+
+                except Exception as e:
+                    error_count += 1
+                    if error_count <= 3:
+                        print(f"  エラー: 台番{num} {e}")
+
+            print(f"補完完了: {补完_count}台成功 / {error_count}台失敗")
+
         browser.close()
 
-    # ⑥ 集計ログ
+    # ⑦ 集計ログ
     print(f"取得行数: {len(data_rows)}")
     plus_n = sum(1 for r in data_rows if isinstance(r.get("差枚"), float) and r["差枚"] > 0)
     minus_n = sum(1 for r in data_rows if isinstance(r.get("差枚"), float) and r["差枚"] < 0)
@@ -176,7 +247,7 @@ def scrape_and_save(target_date=None):
         print("❌ データが空です")
         return False
 
-    # ⑦ Google Sheetsへ書き込み
+    # ⑨ Google Sheetsへ書き込み
     sheet = get_or_create_sheet(spreadsheet, date_str)
     sheet.clear()
 
