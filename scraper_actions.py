@@ -85,7 +85,44 @@ def scrape_and_save(target_date=None):
         print(f"全機種URL: {kishu_url}")
 
         page.goto(kishu_url, wait_until="domcontentloaded", timeout=90000)
-        time.sleep(6)
+        
+        # 差枚セルに数値が入るまで最大30秒待つ
+        print("差枚データの読み込み待ち...")
+        try:
+            # samai_cellに数値が入るまで待機
+            page.wait_for_function(
+                """() => {
+                    const cells = document.querySelectorAll('td.samai_cell');
+                    if (cells.length < 10) return false;
+                    // 数値が入っているセルが1つでもあればOK
+                    for (let c of cells) {
+                        const t = c.innerText.trim();
+                        if (t && t !== '-' && /[0-9]/.test(t)) return true;
+                    }
+                    return false;
+                }""",
+                timeout=30000
+            )
+            print("差枚データ読み込み完了")
+        except Exception as e:
+            print(f"待機タイムアウト（続行）: {e}")
+        
+        time.sleep(2)
+
+        # デバッグ：差枚セルの中身を確認
+        sample_cells = page.query_selector_all("td.samai_cell")
+        print(f"samai_cellの数: {len(sample_cells)}")
+        if sample_cells:
+            samples = [c.inner_text().strip() for c in sample_cells[:10]]
+            print(f"最初の10個: {samples}")
+            # マイナスらしいものを探す
+            for c in sample_cells:
+                t = c.inner_text().strip()
+                if t and t != "-" and t != "0":
+                    html = c.inner_html()
+                    if "-" in t or "-" in html:
+                        print(f"マイナス候補: text={repr(t)} html={html[:200]}")
+                        break
 
         # ③ テーブル取得
         table = page.query_selector("div.table_wrap table")
