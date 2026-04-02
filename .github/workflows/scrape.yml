@@ -2,13 +2,19 @@ name: みんレポ自動スクレイピング
 
 on:
   schedule:
-    # 毎日午前9時（日本時間）に実行 ※UTC+9なので0時がJST9時
+    # 毎日午前9時JST（UTC 0時）
     - cron: '0 0 * * *'
-  workflow_dispatch:  # 手動実行ボタンも追加
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: '取得対象日付 (例: 2026-04-01) 空白なら昨日'
+        required: false
+        default: ''
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: リポジトリをチェックアウト
@@ -21,11 +27,17 @@ jobs:
 
       - name: ライブラリインストール
         run: |
-          pip install requests beautifulsoup4 gspread google-auth
+          pip install playwright gspread google-auth
+          playwright install chromium
+          playwright install-deps chromium
 
       - name: スクレイピング実行
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
         run: |
-          python scraper_actions.py
+          if [ -n "${{ github.event.inputs.target_date }}" ]; then
+            python scraper_actions.py "${{ github.event.inputs.target_date }}"
+          else
+            python scraper_actions.py
+          fi
