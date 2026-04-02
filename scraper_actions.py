@@ -1,7 +1,6 @@
 """
-scraper_actions.py v2 - GitHub Actions用スクレイパー（日付別蓄積版）
-毎日新しいシートにデータを蓄積する
-既存の「スロデータ」シートは自動的に日付シートにコピーして保持
+scraper_actions.py v3 - 差枚取得修正版
+みんレポの差枚列を正確に取得
 """
 
 import os
@@ -14,21 +13,17 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
 
-# ─────────────────────────────────────────────
-# 設定
-# ─────────────────────────────────────────────
 TARGET_URL = "https://min-repo.com/tag/スーパーコスモプレミアム堺店/"
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "")
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     "Accept-Language": "ja,en-US;q=0.7,en;q=0.3",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
 }
 
-# ─────────────────────────────────────────────
-# Google Sheets接続
-# ─────────────────────────────────────────────
 def connect_spreadsheet():
     creds_json = os.environ.get("GCP_CREDENTIALS", "")
     if not creds_json:
@@ -49,49 +44,97 @@ def get_or_create_sheet(spreadsheet, sheet_name):
         return spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=20)
 
 def migrate_old_data(spreadsheet):
-    """既存の「スロデータ」シートを日付シートに移行"""
     try:
         old_sheet = spreadsheet.worksheet("スロデータ")
         data = old_sheet.get_all_values()
         if not data:
             return
         date_str = "2026-03-29"
-        if len(data) > 1 and data[1]:
-            try:
-                date_part = data[1][0].split(" ")[0] if data[1][0] else date_str
-                if re.match(r"\d{4}-\d{2}-\d{2}", date_part):
-                    date_str = date_part
-            except:
-                pass
         try:
             spreadsheet.worksheet(date_str)
-            print(f"日付シート {date_str} は既に存在します。移行スキップ。")
+            print(f"日付シート {date_str} は既に存在します")
         except gspread.WorksheetNotFound:
             new_sheet = spreadsheet.add_worksheet(title=date_str, rows=len(data)+10, cols=25)
             new_sheet.update(data)
             print(f"既存データを {date_str} シートに移行しました")
     except gspread.WorksheetNotFound:
-        print("スロデータシートは見つかりませんでした（スキップ）")
+        pass
     except Exception as e:
         print(f"移行エラー（続行）: {e}")
 
-# ─────────────────────────────────────────────
-# 数値パース
-# ─────────────────────────────────────────────
 def parse_num(text):
-    if not text or text.strip() in ["-", "", "−", "ー"]:
+    """数値文字列をfloatに変換（マイナス対応）"""
+    if not text or str(text).strip() in ["-", "", "−", "ー", "None", "nan"]:
         return ""
-    cleaned = text.strip().replace(",", "").replace("＋", "+").replace("－", "-")
-    m = re.search(r"[+-]?\d+", cleaned)
-    return float(m.group()) if m else ""
+    s = str(text).strip()
+    # 全角数字・記号を半角に
+    s = s.replace("，", ",").replace("＋", "+").replace("－", "-").replace("ー", "-").replace("−", "-")
+    s = s.replace(",", "")
+    m = re.search(r"[+-]?\d+\.?\d*", s)
+    if m:
+        val = float(m.group())
+        # みんレポは差枚がマイナスの場合、赤色テキストで表示
+        # spanのclassがminusやredの場合はマイナスにする
+        return val
+    return ""
 
-# ─────────────────────────────────────────────
-# ページ取得
-# ─────────────────────────────────────────────
+def parse_cell(cell):
+    """
+    セルの数値を取得（みんレポのマイナス表示に完全対応）
+    みんレポはマイナス差枚をCSSクラスやstyleで赤表示する
+    """
+    text = cell.get_text(strip=True)
+    if not text or text in ["-", "−", "", "ー"]:
+        return ""
+
+    # ── マイナス判定（複数パターン対応）──
+    is_negative = False
+
+    # 1. spanのclassにminus/red/negativeなど
+    for span in cell.find_all("span"):
+        classes = " ".join(span.get("class", []))
+        style = span.get("style", "")
+        if any(c in classes for c in ["minus", "red", "negative", "m", "down", "lose"]):
+            is_negative = True; break
+        if "color:red" in style or "color:#e" in style or "color:#f" in style:
+            is_negative = True; break
+
+    # 2. tdのclassやstyle
+    if not is_negative:
+        td_classes = " ".join(cell.get("class", []))
+        td_style = cell.get("style", "")
+        if any(c in td_classes for c in ["minus", "red", "negative", "down", "lose"]):
+            is_negative = True
+        if "color:red" in td_style or "color:#e" in td_style:
+            is_negative = True
+
+    # 3. テキスト自体にマイナス符号がある（全角・半角）
+    text_clean = text.strip()
+    text_clean = text_clean.replace("，", ",").replace("＋", "+")
+    text_clean = text_clean.replace("－", "-").replace("ー", "-").replace("−", "-")
+    text_clean = text_clean.replace(",", "")
+
+    if text_clean.startswith("-"):
+        is_negative = True
+
+    # 数値抽出
+    m = re.search(r"[+-]?\d+\.?\d*", text_clean)
+    if not m:
+        return text
+
+    val = float(m.group())
+
+    # マイナス判定でプラス値ならマイナスにする
+    if is_negative and val > 0:
+        val = -val
+
+    return val
+
 def fetch_page(url, retries=3):
     for i in range(retries):
         try:
-            res = requests.get(url, headers=HEADERS, timeout=30)
+            session = requests.Session()
+            res = session.get(url, headers=HEADERS, timeout=30)
             res.encoding = "utf-8"
             if res.status_code == 200:
                 return res.text
@@ -101,14 +144,22 @@ def fetch_page(url, retries=3):
             time.sleep(5)
     return None
 
-# ─────────────────────────────────────────────
-# メイン処理
-# ─────────────────────────────────────────────
-def scrape_and_save():
+def scrape_and_save(target_date=None):
+    """
+    target_date: 取得対象日付 (例: "2026-03-29")
+                 Noneの場合は昨日のデータを取得
+    """
     jst_now = datetime.utcnow() + timedelta(hours=9)
-    yesterday = jst_now - timedelta(days=1)
-    date_str = yesterday.strftime("%Y-%m-%d")
-    date_display = yesterday.strftime("%Y/%m/%d")
+
+    if target_date:
+        # 指定日付を使用
+        target = datetime.strptime(target_date, "%Y-%m-%d")
+    else:
+        # デフォルト：昨日
+        target = jst_now - timedelta(days=1)
+
+    date_str = target.strftime("%Y-%m-%d")
+    date_display = target.strftime("%Y/%m/%d")
 
     print(f"=== スクレイピング開始: {jst_now.strftime('%Y-%m-%d %H:%M:%S')} JST ===")
     print(f"対象日付: {date_str}")
@@ -117,6 +168,7 @@ def scrape_and_save():
     spreadsheet = connect_spreadsheet()
     migrate_old_data(spreadsheet)
 
+    # タグページ取得
     print(f"アクセス中: {TARGET_URL}")
     html = fetch_page(TARGET_URL)
     if not html:
@@ -144,6 +196,8 @@ def scrape_and_save():
         return False
 
     soup2 = BeautifulSoup(html2, "html.parser")
+
+    # 全機種URL取得
     kishu_link = soup2.select_one("a.btn1[href*='?kishu=all']")
     if kishu_link:
         kishu_href = kishu_link.get("href")
@@ -160,6 +214,7 @@ def scrape_and_save():
     else:
         soup3 = soup2
 
+    # テーブル取得
     table_wrap2 = soup3.select_one("div.table_wrap")
     if not table_wrap2:
         print("データテーブルが見つかりません")
@@ -175,40 +230,82 @@ def scrape_and_save():
         print("行データが見つかりません")
         return False
 
+    # ── ヘッダー解析 ──
     header_row = rows[0]
     headers = [th.get_text(strip=True) for th in header_row.select("th, td")]
     print(f"ヘッダー: {headers}")
 
+    # 列インデックスを特定
+    col_map = {}
+    for i, h in enumerate(headers):
+        h_lower = h.lower().strip()
+        if any(k in h_lower for k in ["機種", "name"]): col_map["機種"] = i
+        elif any(k in h_lower for k in ["台番", "台no", "no"]): col_map["台番"] = i
+        elif any(k in h_lower for k in ["差枚", "diff"]): col_map["差枚"] = i
+        elif any(k in h_lower for k in ["g数", "回転", "game", "ゲーム"]): col_map["G数"] = i
+        elif any(k in h_lower for k in ["出率", "rate", "bb", "rb"]): col_map["出率"] = i
+
+    print(f"列マッピング: {col_map}")
+
+    # ── データ行解析（parse_cellでマイナス判定）──
     data_rows = []
+    debug_shown = 0  # デバッグ出力は最初の3行だけ
     for row in rows[1:]:
         cells = row.select("td")
         if not cells:
             continue
-        row_data = [c.get_text(strip=True) for c in cells]
+
+        row_data = {}
+        for key, idx in col_map.items():
+            if idx < len(cells):
+                row_data[key] = parse_cell(cells[idx])
+            else:
+                row_data[key] = ""
+
+        # デバッグ: 最初の3行と、差枚がマイナスらしい行のHTMLを表示
+        if debug_shown < 3:
+            diff_idx = col_map.get("差枚", -1)
+            if diff_idx >= 0 and diff_idx < len(cells):
+                cell_html = str(cells[diff_idx])[:300]
+                cell_text = cells[diff_idx].get_text(strip=True)
+                print(f"[DEBUG行{debug_shown+1}] 差枚テキスト={repr(cell_text)} HTML={cell_html}")
+            debug_shown += 1
+
         if row_data:
             data_rows.append(row_data)
 
     print(f"取得行数: {len(data_rows)}")
+
+    # マイナスの台数確認
+    if data_rows and "差枚" in col_map:
+        minus_count = sum(1 for r in data_rows if isinstance(r.get("差枚"), float) and r["差枚"] < 0)
+        plus_count = sum(1 for r in data_rows if isinstance(r.get("差枚"), float) and r["差枚"] > 0)
+        print(f"差枚確認: プラス{plus_count}台 / マイナス{minus_count}台")
+
     if not data_rows:
         print("データが空です")
         return False
 
+    # ── Google Sheetsに書き込み ──
     sheet = get_or_create_sheet(spreadsheet, date_str)
     sheet.clear()
 
     now_str = jst_now.strftime("%Y-%m-%d %H:%M")
-    full_headers = ["取得日時", "対象日付"] + headers
-    sheet.append_row(full_headers)
+    # ヘッダー
+    out_headers = ["取得日時", "対象日付", "機種名", "台番", "差枚", "G数", "出率"]
+    sheet.append_row(out_headers)
 
     batch = []
     for row_data in data_rows:
-        processed = []
-        for i, val in enumerate(row_data):
-            if i <= 1:
-                processed.append(val)
-            else:
-                processed.append(parse_num(val))
-        batch.append([now_str, date_display] + processed)
+        batch.append([
+            now_str,
+            date_display,
+            str(row_data.get("機種", "")),
+            row_data.get("台番", ""),
+            row_data.get("差枚", ""),
+            row_data.get("G数", ""),
+            row_data.get("出率", ""),
+        ])
 
     for i in range(0, len(batch), 100):
         sheet.append_rows(batch[i:i+100])
@@ -219,13 +316,18 @@ def scrape_and_save():
 
     all_sheets = [ws.title for ws in spreadsheet.worksheets()]
     date_sheets = sorted([s for s in all_sheets if re.match(r"\d{4}-\d{2}-\d{2}", s)])
-    print(f"蓄積済みシート: {date_sheets}")
-    print(f"蓄積日数: {len(date_sheets)}日分")
+    print(f"蓄積済みシート: {date_sheets} ({len(date_sheets)}日分)")
 
     return True
 
 if __name__ == "__main__":
-    success = scrape_and_save()
+    import sys
+    # コマンドライン引数で日付指定可能
+    # 例: python scraper_actions.py 2026-03-29
+    target = sys.argv[1] if len(sys.argv) > 1 else None
+    if target:
+        print(f"指定日付モード: {target}")
+    success = scrape_and_save(target_date=target)
     if success:
         print("🎉 正常完了")
         exit(0)
