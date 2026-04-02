@@ -259,11 +259,21 @@ def scrape_and_save(target_date=None):
 
     # ── データ行解析（parse_cellでマイナス判定）──
     data_rows = []
-    debug_shown = 0  # デバッグ出力は最初の3行だけ
+    debug_shown = 0
     for row in rows[1:]:
         cells = row.select("td")
         if not cells:
             continue
+
+        # デバッグ: 最初の5行の全セルを表示
+        if debug_shown < 5:
+            all_texts = [c.get_text(strip=True) for c in cells]
+            print(f"[DEBUG行{debug_shown+1}] セル数={len(cells)} 全テキスト={all_texts}")
+            # 差枚セルのHTMLも表示
+            diff_idx = col_map.get("差枚", -1)
+            if diff_idx >= 0 and diff_idx < len(cells):
+                print(f"  差枚セルHTML: {str(cells[diff_idx])[:400]}")
+            debug_shown += 1
 
         row_data = {}
         for key, idx in col_map.items():
@@ -271,15 +281,6 @@ def scrape_and_save(target_date=None):
                 row_data[key] = parse_cell(cells[idx])
             else:
                 row_data[key] = ""
-
-        # デバッグ: 最初の3行と、差枚がマイナスらしい行のHTMLを表示
-        if debug_shown < 3:
-            diff_idx = col_map.get("差枚", -1)
-            if diff_idx >= 0 and diff_idx < len(cells):
-                cell_html = str(cells[diff_idx])[:300]
-                cell_text = cells[diff_idx].get_text(strip=True)
-                print(f"[DEBUG行{debug_shown+1}] 差枚テキスト={repr(cell_text)} HTML={cell_html}")
-            debug_shown += 1
 
         if row_data:
             data_rows.append(row_data)
