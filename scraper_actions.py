@@ -65,8 +65,8 @@ def scrape_and_save(target_date=None):
 
         # ① タグページ→最新レポートURL取得
         print(f"タグページアクセス中...")
-        page.goto(TAG_URL, wait_until="networkidle", timeout=60000)
-        time.sleep(2)
+        page.goto(TAG_URL, wait_until="domcontentloaded", timeout=90000)
+        time.sleep(5)
 
         link = page.query_selector("div.table_wrap a")
         if not link:
@@ -84,8 +84,8 @@ def scrape_and_save(target_date=None):
         kishu_url = base + "/?kishu=all"
         print(f"全機種URL: {kishu_url}")
 
-        page.goto(kishu_url, wait_until="networkidle", timeout=60000)
-        time.sleep(3)
+        page.goto(kishu_url, wait_until="domcontentloaded", timeout=90000)
+        time.sleep(6)
 
         # ③ テーブル取得
         table = page.query_selector("div.table_wrap table")
