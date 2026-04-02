@@ -265,15 +265,14 @@ def scrape_and_save(target_date=None):
         if not cells:
             continue
 
-        # デバッグ: 最初の5行の全セルを表示
-        if debug_shown < 5:
+        # デバッグ: 230〜235行目あたり（マイナス台が出始める境界）を表示
+        diff_idx = col_map.get("差枚", -1)
+        if 225 <= debug_shown <= 235:
             all_texts = [c.get_text(strip=True) for c in cells]
-            print(f"[DEBUG行{debug_shown+1}] セル数={len(cells)} 全テキスト={all_texts}")
-            # 差枚セルのHTMLも表示
-            diff_idx = col_map.get("差枚", -1)
+            print(f"[DEBUG行{debug_shown+1}] 全テキスト={all_texts}")
             if diff_idx >= 0 and diff_idx < len(cells):
-                print(f"  差枚セルHTML: {str(cells[diff_idx])[:400]}")
-            debug_shown += 1
+                print(f"  差枚HTML: {str(cells[diff_idx])[:400]}")
+        debug_shown += 1
 
         row_data = {}
         for key, idx in col_map.items():
