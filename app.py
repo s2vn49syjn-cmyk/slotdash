@@ -751,10 +751,10 @@ def make_island_map(df, islands=None, target_machines=None, diff_override=None):
     if target_machines is None:
         target_machines = set()
 
-    # セルサイズ（Excelの列幅・行高に対応）
-    CW = 13   # セル幅
-    CH = 10   # セル高
-    PAD = 1
+    # セルサイズ（見やすいサイズに拡大）
+    CW = 52   # セル幅
+    CH = 38   # セル高
+    PAD = 2
 
     shapes = []
     annotations = []
@@ -777,11 +777,11 @@ def make_island_map(df, islands=None, target_machines=None, diff_override=None):
 
         # 枠線
         if is_target:
-            border_c = "#ffffff"; border_w = 2.5
+            border_c = "#ffffff"; border_w = 3
         elif not np.isnan(diff) and diff <= -500:
             border_c = "rgba(200,0,0,0.8)"; border_w = 1.5
         else:
-            border_c = "rgba(0,0,0,0.2)"; border_w = 0.5
+            border_c = "rgba(80,80,80,0.4)"; border_w = 0.8
 
         # セル背景
         shapes.append(dict(type="rect",
@@ -794,31 +794,31 @@ def make_island_map(df, islands=None, target_machines=None, diff_override=None):
         # 狙い台：金枠
         if is_target:
             shapes.append(dict(type="rect",
-                x0=px - 1.5, y0=py - CH - 1,
-                x1=px + CW + 0.5, y1=py + 1.5,
+                x0=px - 3, y0=py - CH - 2,
+                x1=px + CW + 2, y1=py + 3,
                 fillcolor="rgba(0,0,0,0)",
-                line=dict(color="#FFD700", width=2),
+                line=dict(color="#FFD700", width=2.5),
                 layer="above"))
             annotations.append(dict(
-                x=px + CW/2, y=py + 3,
+                x=px + CW/2, y=py + 8,
                 text="🎯", showarrow=False,
-                font=dict(size=6), xanchor="center"))
+                font=dict(size=10), xanchor="center"))
 
-        # 台番（小さく上部）
-        num_c = "#ffffff" if not np.isnan(diff) and diff >= 10000 else "rgba(0,0,0,0.5)"
+        # 台番（上部）
+        num_c = "#ffffff" if not np.isnan(diff) and diff >= 10000 else "rgba(0,0,0,0.55)"
         annotations.append(dict(
-            x=px + CW/2, y=py - 2,
+            x=px + CW/2, y=py - 7,
             text=str(mno),
             showarrow=False,
-            font=dict(size=6, color=num_c),
+            font=dict(size=9, color=num_c),
             xanchor="center"))
 
         # 差枚（中央）
         annotations.append(dict(
-            x=px + CW/2, y=py - CH/2 - 1,
+            x=px + CW/2, y=py - CH/2 - 2,
             text=f"<b>{diff_text}</b>",
             showarrow=False,
-            font=dict(size=7, color=text_c),
+            font=dict(size=10, color=text_c),
             xanchor="center"))
 
     # 全体サイズ計算
@@ -829,14 +829,14 @@ def make_island_map(df, islands=None, target_machines=None, diff_override=None):
 
     fig = go.Figure()
     fig.update_layout(
-        width=max(900, total_w),
-        height=max(700, total_h),
+        width=max(1200, total_w),
+        height=max(900, total_h),
         paper_bgcolor="#0a0e1a",
         plot_bgcolor="#0d1520",
         showlegend=False,
-        margin=dict(l=5, r=5, t=10, b=5),
-        xaxis=dict(visible=False, range=[0, total_w]),
-        yaxis=dict(visible=False, range=[min(all_py) - CH*2, 10]),
+        margin=dict(l=10, r=10, t=10, b=10),
+        xaxis=dict(visible=False, range=[-CW, total_w]),
+        yaxis=dict(visible=False, range=[min(all_py) - CH*2, CH*2]),
         hovermode="closest",
     )
     fig.update_layout(shapes=shapes, annotations=annotations)
