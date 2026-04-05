@@ -243,7 +243,7 @@ def calc_alerts(df_today, history, stars):
                     "台番": num, "機種名": 機種, "diff": today_diff, "detail": f"前日比 {diff_sign(change)}"})
         plus_days = sum(1 for d in diffs if d > 0)
         hold_score = min(100, plus_days * 15
-            + (20 if rots and np.mean(rots) >= 600 else 0)
+            + (20 if rots and np.mean(rots) >= 7000 else 0)
             + (15 if diffs and np.mean(diffs) > 500 else 0)
             + (20 if not np.isnan(today_diff) and today_diff >= 2000 else 0))
         if hold_score >= 50:
@@ -909,7 +909,7 @@ with tab_home:
                 sum7 = sum(machine_hist[d]["diff"] for d in recent7 if not np.isnan(machine_hist[d]["diff"]))
                 rots_recent = [machine_hist[d].get("rot", np.nan) for d in recent3]
                 valid_rots = [r for r in rots_recent if not np.isnan(r)]
-                high_rot_days = len([r for r in valid_rots if r >= 600])
+                high_rot_days = len([r for r in valid_rots if r >= 7000])
                 avg_rot = round(np.mean(valid_rots)) if valid_rots else np.nan
                 summary_data.append({
                     "台番": num, "機種名": row["機種名"],
@@ -942,7 +942,7 @@ with tab_home:
                 high_disp["直近3日合計"] = high_disp["直近3日合計"].apply(diff_sign)
                 st.dataframe(high_disp, hide_index=True, use_container_width=True, height=320)
             else:
-                st.info("直近3日間で高回転（600G以上）が続いている台はまだありません。")
+                st.info("直近3日間で高回転（7000G以上）が続いている台はまだありません。")
             if st.button("🌟 上位好調台をすべて星印に登録（3日+7日トップ各5台）", use_container_width=True):
                 top_nums = set(summary_df.nlargest(5, "直近3日合計")["台番"]) | set(summary_df.nlargest(5, "直近7日合計")["台番"])
                 for n in top_nums:
