@@ -1921,22 +1921,6 @@ with tab_island:
                         st.session_state.stars[台番_str] = False
                         st.rerun()
 
-        st.markdown('<div style="margin-top:0.8rem;"></div>', unsafe_allow_html=True)
-        inp_col1, inp_col2 = st.columns([2,1])
-        with inp_col1:
-            manual_input = st.text_input("台番を直接入力", placeholder="例: 1147", key="island_manual_input")
-        with inp_col2:
-            st.markdown("<div style='margin-top:1.6rem;'></div>", unsafe_allow_html=True)
-            if st.button("🎯 登録", use_container_width=True, key="island_manual_btn"):
-                try:
-                    num = int(manual_input.strip())
-                    台番_str = str(num)
-                    st.session_state.stars[台番_str] = True
-                    st.success(f"台番 {num} を狙い台に登録しました！")
-                    st.rerun()
-                except:
-                    st.error("正しい台番を入力してください")
-
         current_targets = [(k, v) for k, v in st.session_state.stars.items() if v]
         if current_targets:
             st.markdown('<div class="section-title">🎯 現在の狙い台</div>', unsafe_allow_html=True)
