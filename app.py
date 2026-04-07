@@ -1652,6 +1652,18 @@ with tab_home:
                 else:
                     f_rot_max = 99999
 
+            st.markdown('<div style="font-size:0.75rem;color:#00ccff;margin-top:4px;margin-bottom:2px;">連日高回転台（据え置き期待）</div>', unsafe_allow_html=True)
+            fr_c, fr_d = st.columns(2)
+            with fr_c:
+                f_rot_cont_enabled = st.checkbox("直近N日 高回転で絞る", key="f_rot_cont_enabled")
+            with fr_d:
+                if f_rot_cont_enabled:
+                    f_rot_cont_days = st.slider("直近何日", min_value=1, max_value=7, value=2, step=1, key="f_rot_cont_days")
+                    f_rot_cont_g = st.slider("G以上（各日）", min_value=0, max_value=10000, value=7000, step=500, key="f_rot_cont_g")
+                else:
+                    f_rot_cont_days = 2
+                    f_rot_cont_g = 7000
+
             st.markdown("<hr style='border-color:#1e2d45;margin:8px 0;'>", unsafe_allow_html=True)
 
             # ── 機種・その他 ──
@@ -1667,9 +1679,10 @@ with tab_home:
             if st.button("🔄 フィルタをリセット", use_container_width=True, key="f_reset"):
                 for k in ["f_diff_minus","f_3day_minus","f_big_minus","f_3day_sum_minus",
                           "f_7day_sum_minus","f_recovery","f_range_enabled",
-                          "f_rot_enabled","f_rot_max_enabled","f_juggler","f_star","f_machines"]:
+                          "f_rot_enabled","f_rot_max_enabled","f_rot_cont_enabled",
+                          "f_juggler","f_star","f_machines"]:
                     if k in st.session_state:
-                        st.session_state[k] = False
+                        del st.session_state[k]
                 st.rerun()
 
         # ── フィルタ適用 ──
@@ -1735,6 +1748,20 @@ with tab_home:
         if f_rot_max_enabled:
             df_display = df_display[df_display["回転数"] <= f_rot_max]
             active_filters.append(f"{f_rot_max:,}G以下")
+
+        if f_rot_cont_enabled and history:
+            def check_cont_rot(num):
+                if np.isnan(num): return False
+                mh = history.get(int(num), {})
+                dates = sorted(mh.keys(), reverse=True)[:f_rot_cont_days]
+                if len(dates) < f_rot_cont_days: return False
+                return all(
+                    not np.isnan(mh[d].get("rot", np.nan)) and mh[d].get("rot", 0) >= f_rot_cont_g
+                    for d in dates
+                )
+            mask = df_display["台番"].apply(check_cont_rot)
+            df_display = df_display[mask]
+            active_filters.append(f"直近{f_rot_cont_days}日{f_rot_cont_g:,}G以上")
 
         # 機種・その他
         if f_juggler:
