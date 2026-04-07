@@ -1605,45 +1605,97 @@ with tab_home:
             st.info("📅 直近傾向まとめは、3日以上の履歴データが蓄積されると表示されます。")
             summary_df = pd.DataFrame()
 
-        st.markdown('<div class="section-title">クイックフィルタ</div>', unsafe_allow_html=True)
-        filters = ["全台", "前日凹み", "前日プラス", "直近3日合計", "直近7日合計", "ジャグラー", "⭐星印"]
-        fcols = st.columns(len(filters))
-        for i, f in enumerate(filters):
-            if fcols[i].button(f, key=f"qf_{f}"):
-                st.session_state.active_filter = f
+        # ════════════════════════════════════════
+        # 複合フィルタ（狙い台絞り込み）
+        # ════════════════════════════════════════
+        st.markdown('<div class="section-title">🔍 狙い台フィルタ</div>', unsafe_allow_html=True)
+
+        with st.expander("フィルタ条件を設定", expanded=False):
+            st.markdown('<div style="font-size:0.75rem;color:#7a8aaa;margin-bottom:8px;">複数条件のAND絞り込み。条件を組み合わせて狙い台を絞れます。</div>', unsafe_allow_html=True)
+
+            fc1, fc2 = st.columns(2)
+            with fc1:
+                st.markdown('<div style="font-size:0.75rem;color:#00ffcc;margin-bottom:4px;">📊 差枚条件</div>', unsafe_allow_html=True)
+                f_diff_plus = st.checkbox("前日プラスのみ", key="f_diff_plus")
+                f_diff_minus = st.checkbox("前日マイナスのみ（凹み狙い）", key="f_diff_minus")
+                f_3day_plus = st.checkbox("直近3日合計プラス", key="f_3day_plus")
+                f_7day_plus = st.checkbox("直近7日合計プラス", key="f_7day_plus")
+                f_recovery = st.checkbox("復活候補（7日↑・3日↓）", key="f_recovery")
+
+            with fc2:
+                st.markdown('<div style="font-size:0.75rem;color:#00ffcc;margin-bottom:4px;">🎰 機種・その他</div>', unsafe_allow_html=True)
+                f_juggler = st.checkbox("ジャグラー系のみ", key="f_juggler")
+                f_star = st.checkbox("⭐星印のみ", key="f_star")
+
+                st.markdown('<div style="font-size:0.75rem;color:#00ffcc;margin-top:8px;margin-bottom:4px;">🔄 回転数条件</div>', unsafe_allow_html=True)
+                f_rot_enabled = st.checkbox("回転数で絞る", key="f_rot_enabled")
+                if f_rot_enabled:
+                    f_rot_min = st.slider("最低回転数（G以上）", min_value=0, max_value=10000, value=7000, step=500, key="f_rot_min")
+                else:
+                    f_rot_min = 0
+
+            if st.button("🔄 フィルタをリセット", use_container_width=True, key="f_reset"):
+                for k in ["f_diff_plus","f_diff_minus","f_3day_plus","f_7day_plus","f_recovery","f_juggler","f_star","f_rot_enabled"]:
+                    if k in st.session_state:
+                        st.session_state[k] = False
                 st.rerun()
 
-        af = st.session_state.active_filter
-        if af == "全台":
-            df_display = df.dropna(subset=["前日差枚"]).sort_values("前日差枚", ascending=False)
-        elif af == "前日凹み":
-            df_display = df[df["前日差枚"] < 0].sort_values("前日差枚")
-        elif af == "前日プラス":
-            df_display = df[df["前日差枚"] > 0].sort_values("前日差枚", ascending=False)
-        elif af == "直近3日合計":
-            if not summary_df.empty:
-                temp = summary_df.nlargest(999, "直近3日合計").copy()
-                df_display = temp.merge(df[["台番", "機種名", "前日差枚", "スコア", "is_juggler", "回転数"]], on="台番", how="left")
-                df_display = df_display.sort_values("直近3日合計", ascending=False)
-            else:
-                df_display = df.dropna(subset=["前日差枚"]).sort_values("前日差枚", ascending=False)
-        elif af == "直近7日合計":
-            if not summary_df.empty:
-                temp = summary_df.nlargest(999, "直近7日合計").copy()
-                df_display = temp.merge(df[["台番", "機種名", "前日差枚", "スコア", "is_juggler", "回転数"]], on="台番", how="left")
-                df_display = df_display.sort_values("直近7日合計", ascending=False)
-            else:
-                df_display = df.dropna(subset=["前日差枚"]).sort_values("前日差枚", ascending=False)
-        elif af == "ジャグラー":
-            df_display = df[df["is_juggler"]].sort_values("前日差枚", ascending=False)
-        elif af == "⭐星印":
-            starred = [k for k, v in st.session_state.stars.items() if v]
-            df_display = df[df["台番"].apply(lambda x: str(int(x)) if not np.isnan(x) else "").isin(starred)]
-            df_display = df_display.sort_values("前日差枚", ascending=False) if not df_display.empty else df.head(0)
+        # フィルタ適用
+        # まずsummary_dfとdfをマージして全条件を使えるようにする
+        if not summary_df.empty:
+            df_work = df.copy()
+            df_work = df_work.merge(
+                summary_df[["台番", "直近3日合計", "直近7日合計"]],
+                on="台番", how="left"
+            )
         else:
-            df_display = df.dropna(subset=["前日差枚"]).sort_values("前日差枚", ascending=False)
+            df_work = df.copy()
+            df_work["直近3日合計"] = np.nan
+            df_work["直近7日合計"] = np.nan
 
-        st.markdown(f'<div style="font-size:0.82rem;color:#00ffcc;margin:0.4rem 0 0.8rem;">▶ フィルタ: {af}　表示台数: {len(df_display)} 台</div>', unsafe_allow_html=True)
+        df_display = df_work.copy()
+
+        # 各条件を順番にAND適用
+        active_filters = []
+
+        if f_diff_plus:
+            df_display = df_display[df_display["前日差枚"] > 0]
+            active_filters.append("前日プラス")
+        if f_diff_minus:
+            df_display = df_display[df_display["前日差枚"] < 0]
+            active_filters.append("前日マイナス")
+        if f_3day_plus and "直近3日合計" in df_display.columns:
+            df_display = df_display[df_display["直近3日合計"] > 0]
+            active_filters.append("3日合計プラス")
+        if f_7day_plus and "直近7日合計" in df_display.columns:
+            df_display = df_display[df_display["直近7日合計"] > 0]
+            active_filters.append("7日合計プラス")
+        if f_recovery and "直近3日合計" in df_display.columns and "直近7日合計" in df_display.columns:
+            df_display = df_display[(df_display["直近7日合計"] > 0) & (df_display["直近3日合計"] < 0)]
+            active_filters.append("復活候補")
+        if f_juggler:
+            df_display = df_display[df_display["is_juggler"] == True]
+            active_filters.append("ジャグラー")
+        if f_star:
+            starred = [k for k, v in st.session_state.stars.items() if v]
+            df_display = df_display[df_display["台番"].apply(lambda x: str(int(x)) if not np.isnan(x) else "").isin(starred)]
+            active_filters.append("星印")
+        if f_rot_enabled and f_rot_min > 0:
+            df_display = df_display[df_display["回転数"] >= f_rot_min]
+            active_filters.append(f"{f_rot_min:,}G以上")
+
+        # ソート（前日差枚降順）
+        if "前日差枚" in df_display.columns:
+            df_display = df_display.sort_values("前日差枚", ascending=False)
+
+        # フィルタ状況表示
+        if active_filters:
+            filter_str = " AND ".join(active_filters)
+            st.markdown(f'<div style="font-size:0.82rem;color:#00ffcc;margin:0.4rem 0 0.8rem;">🔍 適用中: <b>{filter_str}</b>　→　<b>{len(df_display)}台</b></div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div style="font-size:0.82rem;color:#7a8aaa;margin:0.4rem 0 0.8rem;">フィルタなし（全台表示）　{len(df_display)}台</div>', unsafe_allow_html=True)
+
+        af = "複合フィルタ"  # おすすめカード等の表示用
 
         st.markdown('<div class="section-title">⭐ おすすめ台</div>', unsafe_allow_html=True)
         st.markdown('<div style="font-size:0.7rem;color:#7a8aaa;margin-bottom:6px;">選定基準：前日差枚が大きい台TOP3（好調台）＋前日差枚が最もマイナスの台2台（凹み狙い候補）。スコアは前日差枚±1000枚で±30点、週平均±500枚で±20点で計算。</div>', unsafe_allow_html=True)
