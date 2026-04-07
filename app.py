@@ -1613,39 +1613,66 @@ with tab_home:
         with st.expander("フィルタ条件を設定", expanded=False):
             st.markdown('<div style="font-size:0.75rem;color:#7a8aaa;margin-bottom:8px;">複数条件のAND絞り込み。条件を組み合わせて狙い台を絞れます。</div>', unsafe_allow_html=True)
 
-            fc1, fc2 = st.columns(2)
-            with fc1:
-                st.markdown('<div style="font-size:0.75rem;color:#00ffcc;margin-bottom:4px;">📊 差枚条件</div>', unsafe_allow_html=True)
-                f_diff_plus = st.checkbox("前日プラスのみ", key="f_diff_plus")
-                f_diff_minus = st.checkbox("前日マイナスのみ（凹み狙い）", key="f_diff_minus")
-                f_3day_plus = st.checkbox("直近3日合計プラス", key="f_3day_plus")
-                f_7day_plus = st.checkbox("直近7日合計プラス", key="f_7day_plus")
+            # ── 凹み狙い系 ──
+            st.markdown('<div style="font-size:0.75rem;color:#ff6666;margin-bottom:4px;">❄️ 凹み狙い系</div>', unsafe_allow_html=True)
+            fc_a, fc_b, fc_c = st.columns(3)
+            with fc_a:
+                f_diff_minus = st.checkbox("前日マイナス", key="f_diff_minus")
+                f_3day_minus = st.checkbox("直近3日連続マイナス", key="f_3day_minus")
+            with fc_b:
+                f_big_minus = st.checkbox("大幅凹み（前日-3000以下）", key="f_big_minus")
+                f_3day_sum_minus = st.checkbox("直近3日合計マイナス", key="f_3day_sum_minus")
+            with fc_c:
+                f_7day_sum_minus = st.checkbox("直近7日合計マイナス", key="f_7day_sum_minus")
                 f_recovery = st.checkbox("復活候補（7日↑・3日↓）", key="f_recovery")
 
-            with fc2:
-                st.markdown('<div style="font-size:0.75rem;color:#00ffcc;margin-bottom:4px;">🎰 機種・その他</div>', unsafe_allow_html=True)
-                f_juggler = st.checkbox("ジャグラー系のみ", key="f_juggler")
-                f_star = st.checkbox("⭐星印のみ", key="f_star")
+            # 差枚範囲スライダー
+            st.markdown('<div style="font-size:0.75rem;color:#ff6666;margin-top:6px;margin-bottom:2px;">差枚範囲を指定</div>', unsafe_allow_html=True)
+            f_range_enabled = st.checkbox("差枚範囲で絞る", key="f_range_enabled")
+            if f_range_enabled:
+                f_diff_range = st.slider("差枚範囲", min_value=-10000, max_value=10000, value=(-5000, -1000), step=500, key="f_diff_range")
+            else:
+                f_diff_range = (-10000, 10000)
 
-                # 機種マルチセレクト
-                all_machines = sorted(df["機種名"].dropna().unique().tolist())
-                f_machines = st.multiselect("機種を選択（複数可）", options=all_machines, default=[], key="f_machines", placeholder="全機種（未選択=全台）")
+            st.markdown("<hr style='border-color:#1e2d45;margin:8px 0;'>", unsafe_allow_html=True)
 
-                st.markdown('<div style="font-size:0.75rem;color:#00ffcc;margin-top:8px;margin-bottom:4px;">🔄 回転数条件</div>', unsafe_allow_html=True)
-                f_rot_enabled = st.checkbox("回転数で絞る", key="f_rot_enabled")
+            # ── 回転数系 ──
+            st.markdown('<div style="font-size:0.75rem;color:#00ccff;margin-bottom:4px;">🔄 回転数条件</div>', unsafe_allow_html=True)
+            fr_a, fr_b = st.columns(2)
+            with fr_a:
+                f_rot_enabled = st.checkbox("最低回転数で絞る", key="f_rot_enabled")
                 if f_rot_enabled:
-                    f_rot_min = st.slider("最低回転数（G以上）", min_value=0, max_value=10000, value=7000, step=500, key="f_rot_min")
+                    f_rot_min = st.slider("G以上", min_value=0, max_value=10000, value=7000, step=500, key="f_rot_min")
                 else:
                     f_rot_min = 0
+            with fr_b:
+                f_rot_max_enabled = st.checkbox("最高回転数で絞る（低回転台）", key="f_rot_max_enabled")
+                if f_rot_max_enabled:
+                    f_rot_max = st.slider("G以下", min_value=0, max_value=10000, value=3000, step=500, key="f_rot_max")
+                else:
+                    f_rot_max = 99999
+
+            st.markdown("<hr style='border-color:#1e2d45;margin:8px 0;'>", unsafe_allow_html=True)
+
+            # ── 機種・その他 ──
+            st.markdown('<div style="font-size:0.75rem;color:#00ffcc;margin-bottom:4px;">🎰 機種・その他</div>', unsafe_allow_html=True)
+            fm_a, fm_b = st.columns(2)
+            with fm_a:
+                f_juggler = st.checkbox("ジャグラー系のみ", key="f_juggler")
+                f_star = st.checkbox("⭐星印のみ", key="f_star")
+            with fm_b:
+                all_machine_list = sorted(df["機種名"].dropna().unique().tolist())
+                f_machines = st.multiselect("機種を選択（複数可）", options=all_machine_list, default=[], key="f_machines", placeholder="全機種（未選択=全台）")
 
             if st.button("🔄 フィルタをリセット", use_container_width=True, key="f_reset"):
-                for k in ["f_diff_plus","f_diff_minus","f_3day_plus","f_7day_plus","f_recovery","f_juggler","f_star","f_rot_enabled","f_machines"]:
+                for k in ["f_diff_minus","f_3day_minus","f_big_minus","f_3day_sum_minus",
+                          "f_7day_sum_minus","f_recovery","f_range_enabled",
+                          "f_rot_enabled","f_rot_max_enabled","f_juggler","f_star","f_machines"]:
                     if k in st.session_state:
                         st.session_state[k] = False
                 st.rerun()
 
-        # フィルタ適用
-        # まずsummary_dfとdfをマージして全条件を使えるようにする
+        # ── フィルタ適用 ──
         if not summary_df.empty:
             df_work = df.copy()
             df_work = df_work.merge(
@@ -1658,42 +1685,73 @@ with tab_home:
             df_work["直近7日合計"] = np.nan
 
         df_display = df_work.copy()
-
-        # 各条件を順番にAND適用
         active_filters = []
 
-        if f_diff_plus:
-            df_display = df_display[df_display["前日差枚"] > 0]
-            active_filters.append("前日プラス")
+        # 凹み狙い系
         if f_diff_minus:
             df_display = df_display[df_display["前日差枚"] < 0]
             active_filters.append("前日マイナス")
-        if f_3day_plus and "直近3日合計" in df_display.columns:
-            df_display = df_display[df_display["直近3日合計"] > 0]
-            active_filters.append("3日合計プラス")
-        if f_7day_plus and "直近7日合計" in df_display.columns:
-            df_display = df_display[df_display["直近7日合計"] > 0]
-            active_filters.append("7日合計プラス")
+
+        if f_big_minus:
+            df_display = df_display[df_display["前日差枚"] <= -3000]
+            active_filters.append("大幅凹み-3000↓")
+
+        if f_3day_sum_minus and "直近3日合計" in df_display.columns:
+            df_display = df_display[df_display["直近3日合計"] < 0]
+            active_filters.append("3日合計マイナス")
+
+        if f_7day_sum_minus and "直近7日合計" in df_display.columns:
+            df_display = df_display[df_display["直近7日合計"] < 0]
+            active_filters.append("7日合計マイナス")
+
+        if f_3day_minus and "直近3日合計" in df_display.columns:
+            # 直近3日すべてマイナス：historyから判定
+            if history:
+                def all_3day_minus(num):
+                    mh = history.get(int(num), {})
+                    dates = sorted(mh.keys(), reverse=True)[:3]
+                    diffs = [mh[d]["diff"] for d in dates if not np.isnan(mh[d]["diff"])]
+                    return len(diffs) >= 3 and all(d < 0 for d in diffs)
+                mask = df_display["台番"].apply(lambda x: all_3day_minus(x) if not np.isnan(x) else False)
+                df_display = df_display[mask]
+                active_filters.append("3日連続マイナス")
+
         if f_recovery and "直近3日合計" in df_display.columns and "直近7日合計" in df_display.columns:
             df_display = df_display[(df_display["直近7日合計"] > 0) & (df_display["直近3日合計"] < 0)]
             active_filters.append("復活候補")
-        if f_juggler:
-            df_display = df_display[df_display["is_juggler"] == True]
-            active_filters.append("ジャグラー")
-        if f_machines:
-            df_display = df_display[df_display["機種名"].isin(f_machines)]
-            active_filters.append(f"機種({len(f_machines)}種)")
-        if f_star:
-            starred = [k for k, v in st.session_state.stars.items() if v]
-            df_display = df_display[df_display["台番"].apply(lambda x: str(int(x)) if not np.isnan(x) else "").isin(starred)]
-            active_filters.append("星印")
+
+        if f_range_enabled:
+            df_display = df_display[
+                (df_display["前日差枚"] >= f_diff_range[0]) &
+                (df_display["前日差枚"] <= f_diff_range[1])
+            ]
+            active_filters.append(f"差枚{f_diff_range[0]:+,}〜{f_diff_range[1]:+,}")
+
+        # 回転数系
         if f_rot_enabled and f_rot_min > 0:
             df_display = df_display[df_display["回転数"] >= f_rot_min]
             active_filters.append(f"{f_rot_min:,}G以上")
 
-        # ソート（前日差枚降順）
-        if "前日差枚" in df_display.columns:
-            df_display = df_display.sort_values("前日差枚", ascending=False)
+        if f_rot_max_enabled:
+            df_display = df_display[df_display["回転数"] <= f_rot_max]
+            active_filters.append(f"{f_rot_max:,}G以下")
+
+        # 機種・その他
+        if f_juggler:
+            df_display = df_display[df_display["is_juggler"] == True]
+            active_filters.append("ジャグラー")
+
+        if f_machines:
+            df_display = df_display[df_display["機種名"].isin(f_machines)]
+            active_filters.append(f"機種({len(f_machines)}種)")
+
+        if f_star:
+            starred = [k for k, v in st.session_state.stars.items() if v]
+            df_display = df_display[df_display["台番"].apply(lambda x: str(int(x)) if not np.isnan(x) else "").isin(starred)]
+            active_filters.append("星印")
+
+        # ソート
+        df_display = df_display.sort_values("前日差枚", ascending=False) if "前日差枚" in df_display.columns else df_display
 
         # フィルタ状況表示
         if active_filters:
@@ -1702,7 +1760,7 @@ with tab_home:
         else:
             st.markdown(f'<div style="font-size:0.82rem;color:#7a8aaa;margin:0.4rem 0 0.8rem;">フィルタなし（全台表示）　{len(df_display)}台</div>', unsafe_allow_html=True)
 
-        af = "複合フィルタ"  # おすすめカード等の表示用
+        af = "複合フィルタ"
 
         st.markdown('<div class="section-title">⭐ おすすめ台</div>', unsafe_allow_html=True)
         st.markdown('<div style="font-size:0.7rem;color:#7a8aaa;margin-bottom:6px;">選定基準：前日差枚が大きい台TOP3（好調台）＋前日差枚が最もマイナスの台2台（凹み狙い候補）。スコアは前日差枚±1000枚で±30点、週平均±500枚で±20点で計算。</div>', unsafe_allow_html=True)
