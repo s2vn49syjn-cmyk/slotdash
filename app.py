@@ -1191,8 +1191,9 @@ def make_pdf_island_map(df, target_machines=None, diff_override=None):
 
     shapes = []
     annotations = []
-    BW = 28  # バッジ幅
-    BH = 18  # バッジ高さ
+    BW = 24  # バッジ幅
+    BH = 14  # バッジ高さ
+    OFFSET_Y = 18  # 台番の上にずらすピクセル数
 
     for mno, (rx, ry) in PDF_POSITIONS.items():
         px = rx * PDF_IMG_W
@@ -1203,41 +1204,47 @@ def make_pdf_island_map(df, target_machines=None, diff_override=None):
         text_c = diff_to_text_color(diff)
         is_target = mno in target_machines
 
-        if np.isnan(diff):
-            diff_text = ""
-            opacity = 0.0  # データなしは非表示
-        elif diff >= 0:
-            diff_text = f"+{int(diff):,}"
-            opacity = 0.88
-        else:
-            diff_text = f"{int(diff):,}"
-            opacity = 0.88
+        # 差枚が0またはデータなしはバッジ非表示（0台は元のPDFのまま）
+        if np.isnan(diff) or diff == 0:
+            if is_target:
+                # 狙い台は0でも金枠だけ表示
+                by = py - OFFSET_Y
+                shapes.append(dict(
+                    type="rect",
+                    x0=px - BW/2 - 2, y0=by - BH/2 - 2,
+                    x1=px + BW/2 + 2, y1=by + BH/2 + 2,
+                    fillcolor="rgba(0,0,0,0)",
+                    line=dict(color="#FFD700", width=2.5),
+                    layer="above"
+                ))
+            continue
 
-        if not np.isnan(diff):
-            # バッジを台番の上に表示（台番テキストの上にオフセット）
-            OFFSET_Y = 22  # 台番テキストの上に表示するオフセット
-            by = py - OFFSET_Y  # 上にずらす
+        by = py - OFFSET_Y  # 台番の上に配置
 
-            border_c = "#FFD700" if is_target else ("rgba(200,0,0,0.9)" if diff <= -500 else "rgba(0,0,0,0.3)")
-            border_w = 2.5 if is_target else (1.5 if diff <= -500 else 0.8)
+        border_c = "#FFD700" if is_target else ("rgba(200,0,0,0.9)" if diff <= -500 else "rgba(50,50,50,0.4)")
+        border_w = 2.5 if is_target else (1.5 if diff <= -500 else 0.8)
 
-            shapes.append(dict(
-                type="rect",
-                x0=px - BW/2, y0=by - BH/2,
-                x1=px + BW/2, y1=by + BH/2,
-                fillcolor=bg,
-                opacity=opacity,
-                line=dict(color=border_c, width=border_w),
-                layer="above"
-            ))
+        shapes.append(dict(
+            type="rect",
+            x0=px - BW/2, y0=by - BH/2,
+            x1=px + BW/2, y1=by + BH/2,
+            fillcolor=bg,
+            opacity=0.92,
+            line=dict(color=border_c, width=border_w),
+            layer="above"
+        ))
 
-            annotations.append(dict(
-                x=px, y=by,
-                text=f"<b>{diff_text}</b>",
-                showarrow=False,
-                font=dict(size=7, color=text_c),
-                xanchor="center", yanchor="middle"
-            ))
+        if np.isnan(diff): diff_text = ""
+        elif diff >= 0: diff_text = f"+{int(diff):,}"
+        else: diff_text = f"{int(diff):,}"
+
+        annotations.append(dict(
+            x=px, y=by,
+            text=f"<b>{diff_text}</b>",
+            showarrow=False,
+            font=dict(size=6, color=text_c),
+            xanchor="center", yanchor="middle"
+        ))
 
     fig.update_layout(
         width=PDF_IMG_W,
