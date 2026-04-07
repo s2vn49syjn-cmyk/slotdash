@@ -1214,14 +1214,17 @@ def make_pdf_island_map(df, target_machines=None, diff_override=None):
             opacity = 0.88
 
         if not np.isnan(diff):
-            # 差枚バッジ（半透明の色付きボックス）
+            # バッジを台番の上に表示（台番テキストの上にオフセット）
+            OFFSET_Y = 22  # 台番テキストの上に表示するオフセット
+            by = py - OFFSET_Y  # 上にずらす
+
             border_c = "#FFD700" if is_target else ("rgba(200,0,0,0.9)" if diff <= -500 else "rgba(0,0,0,0.3)")
             border_w = 2.5 if is_target else (1.5 if diff <= -500 else 0.8)
 
             shapes.append(dict(
                 type="rect",
-                x0=px - BW/2, y0=py - BH/2,
-                x1=px + BW/2, y1=py + BH/2,
+                x0=px - BW/2, y0=by - BH/2,
+                x1=px + BW/2, y1=by + BH/2,
                 fillcolor=bg,
                 opacity=opacity,
                 line=dict(color=border_c, width=border_w),
@@ -1229,7 +1232,7 @@ def make_pdf_island_map(df, target_machines=None, diff_override=None):
             ))
 
             annotations.append(dict(
-                x=px, y=py,
+                x=px, y=by,
                 text=f"<b>{diff_text}</b>",
                 showarrow=False,
                 font=dict(size=7, color=text_c),
