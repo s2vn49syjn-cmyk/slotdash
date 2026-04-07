@@ -919,6 +919,7 @@ with tab_home:
                     "前日差枚": row["前日差枚"]
                 })
             summary_df = pd.DataFrame(summary_data)
+            # ── 好調台・不調台 ──
             col3, col7 = st.columns(2)
             with col3:
                 st.markdown('<div style="font-size:0.82rem;color:#00ffcc;margin-bottom:4px;">📈 直近3日間 好調台 TOP5</div>', unsafe_allow_html=True)
@@ -934,13 +935,47 @@ with tab_home:
                 top7["直近7日合計"] = top7["直近7日合計"].apply(diff_sign)
                 top7["前日差枚"] = top7["前日差枚"].apply(diff_sign)
                 st.dataframe(top7, hide_index=True, use_container_width=True, height=220)
+
+            # ① 不調台
+            col3b, col7b = st.columns(2)
+            with col3b:
+                st.markdown('<div style="font-size:0.82rem;color:#ff4444;margin-bottom:4px;">📉 直近3日間 不調台 WORST5</div>', unsafe_allow_html=True)
+                bot3 = summary_df.nsmallest(5, "直近3日合計")[["台番", "機種名", "直近3日合計", "前日差枚"]].copy()
+                bot3["台番"] = bot3["台番"].astype(int)
+                bot3["直近3日合計"] = bot3["直近3日合計"].apply(diff_sign)
+                bot3["前日差枚"] = bot3["前日差枚"].apply(diff_sign)
+                st.dataframe(bot3, hide_index=True, use_container_width=True, height=220)
+            with col7b:
+                st.markdown('<div style="font-size:0.82rem;color:#ff4444;margin-bottom:4px;">📉 直近7日間 不調台 WORST5</div>', unsafe_allow_html=True)
+                bot7 = summary_df.nsmallest(5, "直近7日合計")[["台番", "機種名", "直近7日合計", "前日差枚"]].copy()
+                bot7["台番"] = bot7["台番"].astype(int)
+                bot7["直近7日合計"] = bot7["直近7日合計"].apply(diff_sign)
+                bot7["前日差枚"] = bot7["前日差枚"].apply(diff_sign)
+                st.dataframe(bot7, hide_index=True, use_container_width=True, height=220)
+
+            # ② 7日プラスだが直近3日マイナス（凹みから復活候補）
+            st.markdown('<div class="section-title">🔄 復活候補（7日プラス・直近3日マイナス）</div>', unsafe_allow_html=True)
+            st.markdown('<div style="font-size:0.72rem;color:#7a8aaa;margin-bottom:6px;">直近7日間はトータルプラスだが直近3日間は凹んでいる台。高設定据え置きで復活の可能性あり。</div>', unsafe_allow_html=True)
+            recovery_df = summary_df[(summary_df["直近7日合計"] > 0) & (summary_df["直近3日合計"] < 0)].copy()
+            recovery_df = recovery_df.sort_values("直近7日合計", ascending=False)
+            if not recovery_df.empty:
+                rec_disp = recovery_df[["台番", "機種名", "直近7日合計", "直近3日合計", "前日差枚"]].head(10).copy()
+                rec_disp["台番"] = rec_disp["台番"].astype(int)
+                rec_disp["直近7日合計"] = rec_disp["直近7日合計"].apply(diff_sign)
+                rec_disp["直近3日合計"] = rec_disp["直近3日合計"].apply(diff_sign)
+                rec_disp["前日差枚"] = rec_disp["前日差枚"].apply(diff_sign)
+                st.dataframe(rec_disp, hide_index=True, use_container_width=True, height=280)
+            else:
+                st.info("該当台なし")
+
+            # ④ 連日高回転台（全台表示）
             st.markdown('<div class="section-title">🔄 連日高回転台（朝イチ据え置き期待）</div>', unsafe_allow_html=True)
             high_rot_df = summary_df[summary_df["高回転日数(3日)"] >= 2].sort_values("高回転日数(3日)", ascending=False)
             if not high_rot_df.empty:
-                high_disp = high_rot_df[["台番", "機種名", "高回転日数(3日)", "平均回転(3日)", "直近3日合計"]].head(12).copy()
+                high_disp = high_rot_df[["台番", "機種名", "高回転日数(3日)", "平均回転(3日)", "直近3日合計"]].copy()
                 high_disp["台番"] = high_disp["台番"].astype(int)
                 high_disp["直近3日合計"] = high_disp["直近3日合計"].apply(diff_sign)
-                st.dataframe(high_disp, hide_index=True, use_container_width=True, height=320)
+                st.dataframe(high_disp, hide_index=True, use_container_width=True, height=400)
             else:
                 st.info("直近3日間で高回転（7000G以上）が続いている台はまだありません。")
             if st.button("🌟 上位好調台をすべて星印に登録（3日+7日トップ各5台）", use_container_width=True):
@@ -994,6 +1029,7 @@ with tab_home:
         st.markdown(f'<div style="font-size:0.82rem;color:#00ffcc;margin:0.4rem 0 0.8rem;">▶ フィルタ: {af}　表示台数: {len(df_display)} 台</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="section-title">⭐ おすすめ台</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:0.7rem;color:#7a8aaa;margin-bottom:6px;">選定基準：前日差枚が大きい台TOP3（好調台）＋前日差枚が最もマイナスの台2台（凹み狙い候補）。スコアは前日差枚±1000枚で±30点、週平均±500枚で±20点で計算。</div>', unsafe_allow_html=True)
         if len(df_display) >= 5:
             card_df = pd.concat([df_display.nlargest(3, "前日差枚"), df_display.nsmallest(2, "前日差枚")]).drop_duplicates()
         else:
@@ -1221,8 +1257,16 @@ with tab_island:
             fig_map = make_island_map(df, display_islands, target_machines=target_machines, diff_override=diff_override)
             st.plotly_chart(fig_map, use_container_width=True, config={
                 "displayModeBar": True, "displaylogo": False, "scrollZoom": True,
-                "modeBarButtonsToRemove": ["lasso2d", "select2d"]
+                "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+                "toImageButtonOptions": {
+                    "format": "png",
+                    "filename": f"島図_{datetime.now().strftime('%Y%m%d')}_{period}",
+                    "height": 1200,
+                    "width": 1800,
+                    "scale": 2
+                }
             })
+        st.markdown('<div style="font-size:0.72rem;color:#7a8aaa;margin-top:-0.5rem;margin-bottom:0.5rem;">📸 右上のカメラアイコン🔲から画像として保存できます</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="section-title">🎯 狙い台登録</div>', unsafe_allow_html=True)
         st.markdown('<div style="font-size:0.75rem;color:#7a8aaa;margin-bottom:0.6rem;">台番を入力して狙い台に登録。島図上で金色枠で表示されます。</div>', unsafe_allow_html=True)
