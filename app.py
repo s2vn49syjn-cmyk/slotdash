@@ -1664,6 +1664,13 @@ with tab_home:
                     f_rot_cont_days = 2
                     f_rot_cont_g = 7000
 
+            st.markdown('<div style="font-size:0.75rem;color:#00ccff;margin-top:4px;margin-bottom:2px;">📈 回転数増加傾向</div>', unsafe_allow_html=True)
+            f_rot_increasing = st.checkbox("回転数が増加傾向（3日前→2日前→1日前で増加）", key="f_rot_increasing")
+            if f_rot_increasing:
+                f_rot_inc_strict = st.checkbox("厳密モード（3日すべて揃っている台のみ）", value=True, key="f_rot_inc_strict")
+            else:
+                f_rot_inc_strict = True
+
             st.markdown("<hr style='border-color:#1e2d45;margin:8px 0;'>", unsafe_allow_html=True)
 
             # ── 機種・その他 ──
@@ -1680,6 +1687,7 @@ with tab_home:
                 for k in ["f_diff_minus","f_3day_minus","f_big_minus","f_3day_sum_minus",
                           "f_7day_sum_minus","f_recovery","f_range_enabled",
                           "f_rot_enabled","f_rot_max_enabled","f_rot_cont_enabled",
+                          "f_rot_increasing","f_rot_inc_strict",
                           "f_juggler","f_star","f_machines"]:
                     if k in st.session_state:
                         del st.session_state[k]
@@ -1762,6 +1770,29 @@ with tab_home:
             mask = df_display["台番"].apply(check_cont_rot)
             df_display = df_display[mask]
             active_filters.append(f"直近{f_rot_cont_days}日{f_rot_cont_g:,}G以上")
+
+        if f_rot_increasing and history:
+            def check_rot_increasing(num):
+                if np.isnan(num): return False
+                mh = history.get(int(num), {})
+                sorted_dates = sorted(mh.keys(), reverse=True)  # 新しい順
+                # 直近3日分の回転数を取得（新しい順: d1=1日前, d2=2日前, d3=3日前）
+                rots = []
+                for d in sorted_dates[:3]:
+                    r = mh[d].get("rot", np.nan)
+                    rots.append(r)
+                # データが足りない場合
+                if f_rot_inc_strict and len(rots) < 3:
+                    return False
+                valid_rots = [r for r in rots if not np.isnan(r)]
+                if len(valid_rots) < 2:
+                    return False
+                # 古い→新しい順に並び替えて増加確認
+                valid_rots_asc = list(reversed(valid_rots))
+                return all(valid_rots_asc[i] < valid_rots_asc[i+1] for i in range(len(valid_rots_asc)-1))
+            mask = df_display["台番"].apply(check_rot_increasing)
+            df_display = df_display[mask]
+            active_filters.append("回転数増加傾向")
 
         # 機種・その他
         if f_juggler:
