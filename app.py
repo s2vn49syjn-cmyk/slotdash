@@ -1847,30 +1847,61 @@ with tab_home:
             st.dataframe(bot5, hide_index=True, use_container_width=True, height=210)
 
         st.markdown('<div class="section-title">📋 全台一覧</div>', unsafe_allow_html=True)
+
+        # 直近3日分の回転数を履歴から取得してカラムに追加
+        def get_rot_cols(df_src, history, date_labels):
+            """直近3日分の回転数列を追加"""
+            result = df_src.copy()
+            if not history or not date_labels:
+                result["1日前G数"] = "-"
+                result["2日前G数"] = "-"
+                result["3日前G数"] = "-"
+                return result
+
+            sorted_dates = sorted(date_labels, reverse=True)
+            d1 = sorted_dates[0] if len(sorted_dates) > 0 else None
+            d2 = sorted_dates[1] if len(sorted_dates) > 1 else None
+            d3 = sorted_dates[2] if len(sorted_dates) > 2 else None
+
+            def get_rot(num, date):
+                if date is None or np.isnan(num): return "-"
+                mh = history.get(int(num), {})
+                rot = mh.get(date, {}).get("rot", np.nan)
+                return f"{int(rot):,}" if not np.isnan(rot) else "-"
+
+            result["1日前G数"] = result["台番"].apply(lambda x: get_rot(x, d1))
+            result["2日前G数"] = result["台番"].apply(lambda x: get_rot(x, d2))
+            result["3日前G数"] = result["台番"].apply(lambda x: get_rot(x, d3))
+            return result
+
         if af == "直近3日合計" and not summary_df.empty:
             disp = summary_df[["台番", "機種名", "直近3日合計", "前日差枚"]].copy()
             disp = disp.merge(df[["台番", "スコア"]], on="台番", how="left")
             disp = disp.sort_values("直近3日合計", ascending=False)
+            disp = get_rot_cols(disp, history, date_labels)
             disp["台番"] = disp["台番"].apply(lambda x: int(x) if not np.isnan(x) else "?")
             disp["直近3日合計"] = disp["直近3日合計"].apply(diff_sign)
             disp["前日差枚"] = disp["前日差枚"].apply(diff_sign)
             disp["スコア"] = disp["スコア"].apply(lambda x: f"{x:.0f}" if not np.isnan(x) else "-")
-            column_order = ["台番", "機種名", "直近3日合計", "前日差枚", "スコア"]
+            column_order = ["台番", "機種名", "直近3日合計", "前日差枚", "1日前G数", "2日前G数", "3日前G数", "スコア"]
         elif af == "直近7日合計" and not summary_df.empty:
             disp = summary_df[["台番", "機種名", "直近7日合計", "前日差枚"]].copy()
             disp = disp.merge(df[["台番", "スコア"]], on="台番", how="left")
             disp = disp.sort_values("直近7日合計", ascending=False)
+            disp = get_rot_cols(disp, history, date_labels)
             disp["台番"] = disp["台番"].apply(lambda x: int(x) if not np.isnan(x) else "?")
             disp["直近7日合計"] = disp["直近7日合計"].apply(diff_sign)
             disp["前日差枚"] = disp["前日差枚"].apply(diff_sign)
             disp["スコア"] = disp["スコア"].apply(lambda x: f"{x:.0f}" if not np.isnan(x) else "-")
-            column_order = ["台番", "機種名", "直近7日合計", "前日差枚", "スコア"]
+            column_order = ["台番", "機種名", "直近7日合計", "前日差枚", "1日前G数", "2日前G数", "3日前G数", "スコア"]
         else:
-            disp = df_display[["台番", "機種名", "前日差枚", "スコア"]].copy()
+            disp = df_display[["台番", "機種名", "前日差枚", "回転数", "スコア"]].copy()
+            disp = get_rot_cols(disp, history, date_labels)
             disp["台番"] = disp["台番"].apply(lambda x: int(x) if not np.isnan(x) else "?")
             disp["前日差枚"] = disp["前日差枚"].apply(diff_sign)
+            disp["回転数"] = disp["回転数"].apply(lambda x: f"{int(x):,}" if not np.isnan(x) else "-")
             disp["スコア"] = disp["スコア"].apply(lambda x: f"{x:.0f}" if not np.isnan(x) else "-")
-            column_order = ["台番", "機種名", "前日差枚", "スコア"]
+            column_order = ["台番", "機種名", "前日差枚", "1日前G数", "2日前G数", "3日前G数", "スコア"]
         st.dataframe(disp[column_order], hide_index=True, use_container_width=True, height=650)
 
 with tab_alert:
