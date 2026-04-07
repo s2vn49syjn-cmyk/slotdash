@@ -1921,34 +1921,6 @@ with tab_island:
                         st.session_state.stars[台番_str] = False
                         st.rerun()
 
-        st.markdown('<div class="section-title">🎯 狙い台登録</div>', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:0.75rem;color:#7a8aaa;margin-bottom:0.6rem;">台番を入力して狙い台に登録。島図上で金色枠で表示されます。</div>', unsafe_allow_html=True)
-
-        if sel_island != "全島表示":
-            isl = islands[island_names.index(sel_island)-1]
-            all_machines = [m for col in isl["rows"] for m in col]
-            island_df = df[df["台番"].apply(lambda x: int(x) if not np.isnan(x) else -1).isin(all_machines)].copy()
-            if not island_df.empty:
-                island_df = island_df.sort_values("前日差枚", ascending=False)
-                st.markdown('<div style="font-size:0.75rem;color:#00ffcc;margin-bottom:0.4rem;">この島の台一覧（タップで狙い台登録）</div>', unsafe_allow_html=True)
-                machine_list = island_df[["台番","機種名","前日差枚"]].values.tolist()
-                cols_per_row = 3
-                for i in range(0, len(machine_list), cols_per_row):
-                    row_machines = machine_list[i:i+cols_per_row]
-                    btn_cols = st.columns(cols_per_row)
-                    for j, (台番_f, 機種, diff_v) in enumerate(row_machines):
-                        台番_n = int(台番_f) if not np.isnan(台番_f) else None
-                        if 台番_n is None: continue
-                        台番_str = str(台番_n)
-                        is_starred = st.session_state.stars.get(台番_str, False)
-                        diff_display = diff_sign(diff_v) if not np.isnan(diff_v) else "?"
-                        star_mark = "🎯" if is_starred else ""
-                        label = f"{star_mark}#{台番_n} {diff_display}"
-                        with btn_cols[j]:
-                            if st.button(label, key=f"island_btn_{台番_n}", use_container_width=True):
-                                st.session_state.stars[台番_str] = not is_starred
-                                st.rerun()
-
         st.markdown('<div style="margin-top:0.8rem;"></div>', unsafe_allow_html=True)
         inp_col1, inp_col2 = st.columns([2,1])
         with inp_col1:
