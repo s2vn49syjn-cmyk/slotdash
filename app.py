@@ -1627,6 +1627,10 @@ with tab_home:
                 f_juggler = st.checkbox("ジャグラー系のみ", key="f_juggler")
                 f_star = st.checkbox("⭐星印のみ", key="f_star")
 
+                # 機種マルチセレクト
+                all_machines = sorted(df["機種名"].dropna().unique().tolist())
+                f_machines = st.multiselect("機種を選択（複数可）", options=all_machines, default=[], key="f_machines", placeholder="全機種（未選択=全台）")
+
                 st.markdown('<div style="font-size:0.75rem;color:#00ffcc;margin-top:8px;margin-bottom:4px;">🔄 回転数条件</div>', unsafe_allow_html=True)
                 f_rot_enabled = st.checkbox("回転数で絞る", key="f_rot_enabled")
                 if f_rot_enabled:
@@ -1635,7 +1639,7 @@ with tab_home:
                     f_rot_min = 0
 
             if st.button("🔄 フィルタをリセット", use_container_width=True, key="f_reset"):
-                for k in ["f_diff_plus","f_diff_minus","f_3day_plus","f_7day_plus","f_recovery","f_juggler","f_star","f_rot_enabled"]:
+                for k in ["f_diff_plus","f_diff_minus","f_3day_plus","f_7day_plus","f_recovery","f_juggler","f_star","f_rot_enabled","f_machines"]:
                     if k in st.session_state:
                         st.session_state[k] = False
                 st.rerun()
@@ -1676,6 +1680,9 @@ with tab_home:
         if f_juggler:
             df_display = df_display[df_display["is_juggler"] == True]
             active_filters.append("ジャグラー")
+        if f_machines:
+            df_display = df_display[df_display["機種名"].isin(f_machines)]
+            active_filters.append(f"機種({len(f_machines)}種)")
         if f_star:
             starred = [k for k, v in st.session_state.stars.items() if v]
             df_display = df_display[df_display["台番"].apply(lambda x: str(int(x)) if not np.isnan(x) else "").isin(starred)]
