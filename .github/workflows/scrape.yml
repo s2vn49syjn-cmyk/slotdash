@@ -3,7 +3,7 @@ name: みんレポ自動スクレイピング
 on:
   schedule:
     # 毎日午前9時JST（UTC 0時）
-    - cron: '0 0 * * *'
+    - cron: '0 22 * * *'
   workflow_dispatch:
     inputs:
       target_date:
