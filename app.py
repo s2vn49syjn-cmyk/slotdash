@@ -1493,8 +1493,8 @@ with col_h2:
     if st.button("🔄 更新", use_container_width=True):
         st.cache_data.clear(); load_data(); st.rerun()
 
-tab_home, tab_alert, tab_hold, tab_island, tab_trend, tab_all, tab_memo, tab_island_edit = st.tabs([
-    "🏠 ホーム", "🔔 アラート", "🎯 据え置き", "🗺 島図", "📈 トレンド", "📋 全台", "⭐ メモ", "⚙ 島設定"
+tab_home, tab_osusume, tab_alert, tab_hold, tab_island, tab_trend, tab_all, tab_memo, tab_island_edit = st.tabs([
+    "🏠 ホーム", "⭐ おすすめ", "🔔 アラート", "🎯 据え置き", "🗺 島図", "📈 トレンド", "📋 全台", "⭐ メモ", "⚙ 島設定"
 ])
 
 with tab_home:
@@ -1970,6 +1970,182 @@ with tab_home:
             disp["回転"] = disp["回転数"].apply(lambda x: f"{int(x):,}" if not np.isnan(x) else "-")
             column_order = ["台番", "機種", "前日", "回転", "1日前G数", "2日前G数", "3日前G数"]
         st.dataframe(disp[column_order], hide_index=True, use_container_width=True, height=650)
+
+
+# ════════════════════════════════════════════
+# ⭐ おすすめタブ
+# ════════════════════════════════════════════
+with tab_osusume:
+    df = st.session_state.df_main
+    if df is None:
+        st.info("データを読み込み中です...")
+    else:
+        history, date_labels = load_history()
+        sorted_dates = sorted(date_labels, reverse=True) if date_labels else []
+
+        st.markdown('<div class="section-title">⭐ おすすめ台</div>', unsafe_allow_html=True)
+
+        # 機種選択
+        all_machine_list = sorted(df["機種名"].dropna().unique().tolist())
+        juggler_machines = [m for m in all_machine_list if is_juggler(m)]
+        non_juggler_machines = [m for m in all_machine_list if not is_juggler(m)]
+
+        st.markdown('<div style="font-size:0.75rem;color:#7a8aaa;margin-bottom:4px;">対象機種を選択（未選択=全機種）</div>', unsafe_allow_html=True)
+        oc1, oc2 = st.columns(2)
+        with oc1:
+            sel_juggler_only = st.checkbox("ジャグラー系のみ", key="os_juggler_only")
+        with oc2:
+            sel_non_juggler = st.checkbox("ジャグラー系を除く", key="os_non_juggler")
+
+        sel_machines = st.multiselect("機種を個別選択（複数可）", options=all_machine_list, default=[], key="os_machines", placeholder="全機種")
+
+        # 対象dfを絞る
+        df_target = df.copy()
+        if sel_juggler_only:
+            df_target = df_target[df_target["is_juggler"] == True]
+        elif sel_non_juggler:
+            df_target = df_target[df_target["is_juggler"] == False]
+        if sel_machines:
+            df_target = df_target[df_target["機種名"].isin(sel_machines)]
+
+        st.markdown(f'<div style="font-size:0.72rem;color:#7a8aaa;margin-bottom:0.8rem;">対象: {len(df_target)}台 | 履歴: {len(sorted_dates)}日分</div>', unsafe_allow_html=True)
+
+        # ── ヘルパー関数 ──
+        def get_diffs(num, n_days):
+            """直近n日分の差枚リスト（新しい順）"""
+            if not history: return []
+            mh = history.get(int(num), {})
+            dates = sorted(mh.keys(), reverse=True)[:n_days]
+            return [mh[d]["diff"] for d in dates if not np.isnan(mh[d]["diff"])]
+
+        def get_rots(num, n_days):
+            """直近n日分の回転数リスト（新しい順）"""
+            if not history: return []
+            mh = history.get(int(num), {})
+            dates = sorted(mh.keys(), reverse=True)[:n_days]
+            return [mh[d].get("rot", np.nan) for d in dates]
+
+        def get_diff_on_day(num, days_ago):
+            """N日前の差枚（1=直近、2=2日前...）"""
+            if not history: return np.nan
+            mh = history.get(int(num), {})
+            dates = sorted(mh.keys(), reverse=True)
+            if len(dates) < days_ago: return np.nan
+            return mh[dates[days_ago-1]]["diff"]
+
+        def render_osusume_cards(label, machines_df, reason, color="#00ffcc"):
+            if machines_df.empty:
+                st.markdown(f'<div style="color:#7a8aaa;font-size:0.8rem;padding:8px;">該当台なし</div>', unsafe_allow_html=True)
+                return
+            for _, row in machines_df.head(8).iterrows():
+                diff = row["前日差枚"]
+                台番_str = str(int(row["台番"])) if not np.isnan(row["台番"]) else "?"
+                is_starred = st.session_state.stars.get(台番_str, False)
+                dc = diff_class(diff)
+                diffs = get_diffs(row["台番"], 7) if not np.isnan(row["台番"]) else []
+                rots = get_rots(row["台番"], 3) if not np.isnan(row["台番"]) else []
+                hist_str = " / ".join([diff_sign(d) for d in diffs[:4]]) if diffs else "-"
+                rot_str = " / ".join([f"{int(r):,}G" if not np.isnan(r) else "-" for r in rots[:3]]) if rots else "-"
+
+                st.markdown(f"""<div class="card" style="border-left:3px solid {color};">
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                    <div>
+                      <div class="machine-num">台番 {台番_str} {'⭐' if is_starred else ''}</div>
+                      <div class="machine-name" style="font-size:0.9rem;">{row['機種名']}</div>
+                      <div style="font-size:0.68rem;color:#7a8aaa;">📊 直近: {hist_str}</div>
+                      <div style="font-size:0.68rem;color:#7a8aaa;">🔄 回転: {rot_str}</div>
+                      <div style="font-size:0.65rem;color:{color};margin-top:2px;">{reason}</div>
+                    </div>
+                    <div style="text-align:right;">
+                      <div class="{dc}" style="font-size:1.2rem;">{diff_sign(diff)}</div>
+                    </div>
+                  </div>
+                </div>""", unsafe_allow_html=True)
+                sc1, sc2 = st.columns([1,3])
+                with sc1:
+                    star_icon = "⭐" if is_starred else "☆"
+                    if st.button(f"{star_icon}", key=f"os_star_{台番_str}_{label[:3]}"):
+                        st.session_state.stars[台番_str] = not is_starred
+                        st.rerun()
+
+        # ════════════════════════════
+        # パターン1: 直近3日連続マイナス ＆ 高回転
+        # ════════════════════════════
+        st.markdown('<div class="section-title">❄️ 直近3日連続マイナス × 高回転</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:0.7rem;color:#7a8aaa;margin-bottom:6px;">3日連続マイナスで、かつ毎日7000G以上回されている台。高設定が凹んでいる可能性大。</div>', unsafe_allow_html=True)
+
+        p1_machines = []
+        for _, row in df_target.iterrows():
+            if np.isnan(row["台番"]): continue
+            diffs = get_diffs(row["台番"], 3)
+            rots = get_rots(row["台番"], 3)
+            valid_rots = [r for r in rots if not np.isnan(r)]
+            if len(diffs) >= 3 and all(d < 0 for d in diffs) and len(valid_rots) >= 2 and np.mean(valid_rots) >= 7000:
+                p1_machines.append(row)
+        p1_df = pd.DataFrame(p1_machines).sort_values("前日差枚") if p1_machines else pd.DataFrame()
+        render_osusume_cards("p1", p1_df, "❄️ 3日連続マイナス × 高回転", "#ff6666")
+
+        # ════════════════════════════
+        # パターン2: 大幅凹み ＆ 高回転
+        # ════════════════════════════
+        st.markdown('<div class="section-title">⚠️ 大幅凹み × 高回転</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:0.7rem;color:#7a8aaa;margin-bottom:6px;">前日-3000以下の大幅凹みで、かつ7000G以上回されている台。設定変更前の大放出候補。</div>', unsafe_allow_html=True)
+
+        p2_machines = []
+        for _, row in df_target.iterrows():
+            if np.isnan(row["台番"]): continue
+            diff = row["前日差枚"]
+            rot = row["回転数"]
+            if not np.isnan(diff) and diff <= -3000 and not np.isnan(rot) and rot >= 7000:
+                p2_machines.append(row)
+        p2_df = pd.DataFrame(p2_machines).sort_values("前日差枚") if p2_machines else pd.DataFrame()
+        render_osusume_cards("p2", p2_df, "⚠️ 大幅凹み-3000↓ × 高回転", "#ff8844")
+
+        # ════════════════════════════
+        # パターン3 & 4: N日前に一気に出てその後連日凹み
+        # ════════════════════════════
+        for days_ago, label_str in [(7, "7日前"), (6, "6日前")]:
+            st.markdown(f'<div class="section-title">📉 {label_str}大当り → 連日凹み</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size:0.7rem;color:#7a8aaa;margin-bottom:6px;">{label_str}に+3000以上出て、その後ずっと差枚1000枚以下（凹み）が続いている台。</div>', unsafe_allow_html=True)
+
+            px_machines = []
+            for _, row in df_target.iterrows():
+                if np.isnan(row["台番"]): continue
+                all_diffs = get_diffs(row["台番"], days_ago)
+                if len(all_diffs) < days_ago: continue
+                # N日前（リストの末尾）が+3000以上
+                big_day = all_diffs[-1]
+                # その後の日々（リストの先頭〜days_ago-1番目）が全部1000以下
+                after_diffs = all_diffs[:-1]
+                if big_day >= 3000 and len(after_diffs) >= 2 and all(d <= 1000 for d in after_diffs):
+                    px_machines.append(row)
+            px_df = pd.DataFrame(px_machines).sort_values("前日差枚") if px_machines else pd.DataFrame()
+            render_osusume_cards(f"p{days_ago}", px_df, f"📉 {label_str}大当り後連日凹み", "#aa88ff")
+
+        # ════════════════════════════
+        # パターン5: ジャグラー連日プラス1000以下 ＆ 回転数増加傾向
+        # ════════════════════════════
+        st.markdown('<div class="section-title">🎰 ジャグラー: 連日小プラス × 回転数増加</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:0.7rem;color:#7a8aaa;margin-bottom:6px;">毎日プラス1000枚以下が続き、かつ回転数が日に日に増えているジャグラー台。客づきが良くなっている可能性。</div>', unsafe_allow_html=True)
+
+        p5_machines = []
+        df_jug = df_target[df_target["is_juggler"] == True]
+        for _, row in df_jug.iterrows():
+            if np.isnan(row["台番"]): continue
+            diffs = get_diffs(row["台番"], 3)
+            rots = get_rots(row["台番"], 3)
+            valid_rots = [r for r in rots if not np.isnan(r)]
+            # 直近3日すべてプラス1000以下
+            if len(diffs) < 2: continue
+            if not all(0 < d <= 1000 for d in diffs): continue
+            # 回転数が増加傾向（古い順に増加）
+            if len(valid_rots) >= 2:
+                rots_asc = list(reversed(valid_rots))
+                if all(rots_asc[i] < rots_asc[i+1] for i in range(len(rots_asc)-1)):
+                    p5_machines.append(row)
+        p5_df = pd.DataFrame(p5_machines).sort_values("回転数", ascending=False) if p5_machines else pd.DataFrame()
+        render_osusume_cards("p5", p5_df, "🎰 連日小プラス × 回転数増加", "#8844ff")
+
 
 with tab_alert:
     df = st.session_state.df_main
