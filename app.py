@@ -1905,34 +1905,70 @@ with tab_home:
             result["3日前G数"] = result["台番"].apply(lambda x: get_rot(x, d3))
             return result
 
+        # 機種名を短縮する関数
+        def shorten_name(name):
+            replacements = [
+                ("スマスロ", "S"), ("Lパチスロ", "L"), ("Lスマスロ", "LS"),
+                ("パチスロ　", ""), ("パチスロ ", ""),
+                ("北斗の拳 転生の章2", "北斗2"), ("北斗の拳", "北斗"),
+                ("革命機ヴァルヴレイヴ2", "ヴァル2"), ("革命機ヴァルヴレイヴ", "ヴァル"),
+                ("マギアレコード 魔法少女まどか☆マギカ外伝", "まどマギ"),
+                ("甲鉄城のカバネリ 海門決戦", "カバネリ海"),
+                ("甲鉄城のカバネリ", "カバネリ"),
+                ("ゴッドイーター リザレクション", "ゴッドイーター"),
+                ("モンスターハンターライズ", "MHライズ"),
+                ("東京リベンジャーズ", "東リベ"),
+                ("銀河英雄伝説 Die Neue These", "銀英伝"),
+                ("沖ドキ!DUO アンコール", "沖ドキDUO"),
+                ("ネオアイムジャグラーEX", "ネオアイム"),
+                ("マイジャグラーV", "マイジャグV"),
+                ("ゴーゴージャグラー３", "GGジャグ3"),
+                ("ウルトラミラクルジャグラー", "ウルミラ"),
+                ("ミスタージャグラー", "ミスジャグ"),
+                ("A-SLOT+ ディスクアップ ULTRAREMIX", "ディスクULTRA"),
+                ("ディスクアップ２", "ディスクアップ2"),
+                ("炎炎ノ消防隊2", "炎炎2"),
+                ("からくりサーカス", "からサーカス"),
+                ("かぐや様は告らせたい", "かぐや様"),
+                ("無職転生～異世界行ったら本気だす～", "無職転生"),
+                ("攻殻機動隊", "攻殻"),
+                ("LBパチスロ ヱヴァンゲリヲン～約束の扉～", "エヴァ扉"),
+                ("交響詩篇エウレカセブン HI-EVOLUTION ZERO TYPE-ART", "エウレカ7"),
+                (" ", ""),
+            ]
+            s = str(name)
+            for old_s, new_s in replacements:
+                s = s.replace(old_s, new_s)
+            return s[:10]  # 最大10文字
+
         if af == "直近3日合計" and not summary_df.empty:
             disp = summary_df[["台番", "機種名", "直近3日合計", "前日差枚"]].copy()
             disp = disp.merge(df[["台番", "スコア"]], on="台番", how="left")
             disp = disp.sort_values("直近3日合計", ascending=False)
             disp = get_rot_cols(disp, history, date_labels)
             disp["台番"] = disp["台番"].apply(lambda x: int(x) if not np.isnan(x) else "?")
-            disp["直近3日合計"] = disp["直近3日合計"].apply(diff_sign)
-            disp["前日差枚"] = disp["前日差枚"].apply(diff_sign)
-            disp["スコア"] = disp["スコア"].apply(lambda x: f"{x:.0f}" if not np.isnan(x) else "-")
-            column_order = ["台番", "機種名", "直近3日合計", "前日差枚", "1日前G数", "2日前G数", "3日前G数", "スコア"]
+            disp["機種"] = disp["機種名"].apply(shorten_name)
+            disp["3日計"] = disp["直近3日合計"].apply(diff_sign)
+            disp["前日"] = disp["前日差枚"].apply(diff_sign)
+            column_order = ["台番", "機種", "3日計", "前日", "1日前G数", "2日前G数", "3日前G数"]
         elif af == "直近7日合計" and not summary_df.empty:
             disp = summary_df[["台番", "機種名", "直近7日合計", "前日差枚"]].copy()
             disp = disp.merge(df[["台番", "スコア"]], on="台番", how="left")
             disp = disp.sort_values("直近7日合計", ascending=False)
             disp = get_rot_cols(disp, history, date_labels)
             disp["台番"] = disp["台番"].apply(lambda x: int(x) if not np.isnan(x) else "?")
-            disp["直近7日合計"] = disp["直近7日合計"].apply(diff_sign)
-            disp["前日差枚"] = disp["前日差枚"].apply(diff_sign)
-            disp["スコア"] = disp["スコア"].apply(lambda x: f"{x:.0f}" if not np.isnan(x) else "-")
-            column_order = ["台番", "機種名", "直近7日合計", "前日差枚", "1日前G数", "2日前G数", "3日前G数", "スコア"]
+            disp["機種"] = disp["機種名"].apply(shorten_name)
+            disp["7日計"] = disp["直近7日合計"].apply(diff_sign)
+            disp["前日"] = disp["前日差枚"].apply(diff_sign)
+            column_order = ["台番", "機種", "7日計", "前日", "1日前G数", "2日前G数", "3日前G数"]
         else:
-            disp = df_display[["台番", "機種名", "前日差枚", "回転数", "スコア"]].copy()
+            disp = df_display[["台番", "機種名", "前日差枚", "回転数"]].copy()
             disp = get_rot_cols(disp, history, date_labels)
             disp["台番"] = disp["台番"].apply(lambda x: int(x) if not np.isnan(x) else "?")
-            disp["前日差枚"] = disp["前日差枚"].apply(diff_sign)
-            disp["回転数"] = disp["回転数"].apply(lambda x: f"{int(x):,}" if not np.isnan(x) else "-")
-            disp["スコア"] = disp["スコア"].apply(lambda x: f"{x:.0f}" if not np.isnan(x) else "-")
-            column_order = ["台番", "機種名", "前日差枚", "1日前G数", "2日前G数", "3日前G数", "スコア"]
+            disp["機種"] = disp["機種名"].apply(shorten_name)
+            disp["前日"] = disp["前日差枚"].apply(diff_sign)
+            disp["回転"] = disp["回転数"].apply(lambda x: f"{int(x):,}" if not np.isnan(x) else "-")
+            column_order = ["台番", "機種", "前日", "回転", "1日前G数", "2日前G数", "3日前G数"]
         st.dataframe(disp[column_order], hide_index=True, use_container_width=True, height=650)
 
 with tab_alert:
