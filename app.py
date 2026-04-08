@@ -1986,9 +1986,56 @@ with tab_osusume:
         st.markdown('<div class="section-title">⭐ おすすめ台</div>', unsafe_allow_html=True)
 
         # 機種選択
-        all_machine_list = sorted(df["機種名"].dropna().unique().tolist())
-        juggler_machines = [m for m in all_machine_list if is_juggler(m)]
-        non_juggler_machines = [m for m in all_machine_list if not is_juggler(m)]
+        # 機種の優先順位（よく使う順）
+        MACHINE_PRIORITY = [
+            "マイジャグラーV",
+            "スマスロ北斗の拳 転生の章2",
+            "ネオアイムジャグラーEX",
+            "L東京喰種",
+            "Lパチスロ かぐや様は告らせたい",
+            "スマスロ 甲鉄城のカバネリ 海門決戦",
+            "Lパチスロ革命機ヴァルヴレイヴ2",
+            "スマスロモンキーターンV",
+            "ウルトラミラクルジャグラー",
+            "ミスタージャグラー",
+            "Lパチスロからくりサーカス",
+            "ゴーゴージャグラー３",
+            "スマスロ鉄拳6",
+            "スマスロ ゴッドイーター リザレクション",
+            "スマスロ新鬼武者3",
+            "Lパチスロ炎炎ノ消防隊2",
+            "沖ドキ！BLACK",
+            "Lスマスロ北斗の拳",
+            "スマスロ マギアレコード 魔法少女まどか☆マギカ外伝",
+            "スマスロ化物語",
+            "A-SLOT+ ディスクアップ ULTRAREMIX",
+            "スマスロ 沖ドキ!DUO アンコール",
+            "スマスロ 東京リベンジャーズ",
+            "スマスロ 攻殻機動隊",
+            "Lアズールレーン THE ANIMATION",
+            "いざ！番長",
+            "L無職転生～異世界行ったら本気だす～",
+            "スマスロ サンダーV",
+            "L範馬刃牙",
+            "スマスロ ゴブリンスレイヤーⅡ",
+            "スマスロ ハナビ",
+            "SHAKE BONUS TRIGGER",
+            "クレアの秘宝伝～はじまりの扉と太陽の石～ボーナストリガーver.",
+        ]
+
+        def sort_machines(machine_list, df_ref):
+            """優先順位順 → 残りは台数多い順"""
+            # 各機種の台数カウント
+            counts = df_ref["機種名"].value_counts().to_dict()
+            priority_map = {m: i for i, m in enumerate(MACHINE_PRIORITY)}
+            def sort_key(m):
+                if m in priority_map:
+                    return (0, priority_map[m], 0)
+                return (1, 0, -counts.get(m, 0))
+            return sorted(machine_list, key=sort_key)
+
+        all_machine_list_raw = df["機種名"].dropna().unique().tolist()
+        all_machine_list = sort_machines(all_machine_list_raw, df)
 
         st.markdown('<div style="font-size:0.75rem;color:#7a8aaa;margin-bottom:4px;">対象機種を選択（未選択=全機種）</div>', unsafe_allow_html=True)
         oc1, oc2 = st.columns(2)
