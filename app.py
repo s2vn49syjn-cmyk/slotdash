@@ -2578,82 +2578,176 @@ with tab_label:
         else:
             sel_date = st.text_input("対象日付", placeholder="例: 2026-04-01", key="lbl_date_text")
 
-        # ── 一括入力 ──
-        st.markdown('<div style="font-size:0.8rem;color:#00ffcc;margin:8px 0 4px;">📝 一括入力</div>', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:0.7rem;color:#7a8aaa;margin-bottom:6px;">1行に「台番 設定」を入力。設定は 高/中/低/不明 または 高設定/中間/低設定 で入力。</div>', unsafe_allow_html=True)
+        # セッションステートで一時ラベルを管理
+        if "table_labels" not in st.session_state:
+            st.session_state.table_labels = {}  # {台番: 設定}
 
-        # 入力例をヒントとして表示
-        hint = "例:\n1147 高\n1148 低\n1149 中\n1150 高\n926 不明"
-        bulk_text = st.text_area("台番と設定を入力（1行1台）", placeholder=hint, height=200, key="bulk_text_input")
+        # 入力モード切替
+        input_mode = st.radio("入力方法", ["📋 表形式", "⌨️ テキスト入力"], horizontal=True, key="lbl_input_mode")
 
-        # パース & プレビュー
-        SETTING_MAP = {
-            "高": "高設定", "高設定": "高設定",
-            "中": "中間設定", "中間": "中間設定", "中間設定": "中間設定",
-            "低": "低設定", "低設定": "低設定",
-            "不明": "不明", "？": "不明", "?": "不明",
-        }
+        if input_mode == "📋 表形式":
+            # 機種フィルタ
+            all_machine_list_lbl = sort_machines(df["機種名"].dropna().unique().tolist(), df)
+            sel_machine_filter = st.multiselect(
+                "機種で絞り込み（未選択=全台）",
+                options=all_machine_list_lbl,
+                default=[],
+                key="lbl_machine_filter",
+                placeholder="全機種"
+            )
 
-        parsed_entries = []
-        parse_errors = []
+            df_lbl = df.copy()
+            if sel_machine_filter:
+                df_lbl = df_lbl[df_lbl["機種名"].isin(sel_machine_filter)]
+            df_lbl = df_lbl.sort_values("台番")
 
-        if bulk_text.strip():
-            for line in bulk_text.strip().splitlines():
-                line = line.strip()
-                if not line: continue
-                parts = line.split()
-                if len(parts) < 2:
-                    parse_errors.append(f"⚠️ 「{line}」→ 形式エラー（台番 設定 の形で入力）")
-                    continue
-                try:
-                    num = int(parts[0])
-                    setting_raw = parts[1]
-                    setting = SETTING_MAP.get(setting_raw)
-                    if not setting:
-                        parse_errors.append(f"⚠️ 「{line}」→ 設定「{setting_raw}」が不明（高/中/低/不明）")
+            st.markdown(f'<div style="font-size:0.72rem;color:#7a8aaa;margin-bottom:6px;">{len(df_lbl)}台表示中　タップで設定を記録 → まとめて保存</div>', unsafe_allow_html=True)
+
+            # 表形式で表示
+            # ヘッダー
+            hc = st.columns([1.2, 3, 1.5, 1, 1, 1, 1])
+            hc[0].markdown('<div style="font-size:0.65rem;color:#7a8aaa;">台番</div>', unsafe_allow_html=True)
+            hc[1].markdown('<div style="font-size:0.65rem;color:#7a8aaa;">機種</div>', unsafe_allow_html=True)
+            hc[2].markdown('<div style="font-size:0.65rem;color:#7a8aaa;">前日差枚</div>', unsafe_allow_html=True)
+            hc[3].markdown('<div style="font-size:0.65rem;color:#00ff88;">高</div>', unsafe_allow_html=True)
+            hc[4].markdown('<div style="font-size:0.65rem;color:#ffcc00;">中</div>', unsafe_allow_html=True)
+            hc[5].markdown('<div style="font-size:0.65rem;color:#ff4444;">低</div>', unsafe_allow_html=True)
+            hc[6].markdown('<div style="font-size:0.65rem;color:#7a8aaa;">不明</div>', unsafe_allow_html=True)
+
+            st.markdown("<hr style='border-color:#1e2d45;margin:4px 0;'>", unsafe_allow_html=True)
+
+            for _, row in df_lbl.iterrows():
+                if np.isnan(row["台番"]): continue
+                num = int(row["台番"])
+                num_str = str(num)
+                機種 = row["機種名"]
+                diff = row["前日差枚"]
+                diff_c = "#00ff88" if not np.isnan(diff) and diff >= 0 else "#ff4444"
+                current = st.session_state.table_labels.get(num_str, "")
+                
+                # 設定済みの場合は行に色をつける
+                row_bg = ""
+                if current == "高設定": row_bg = "background:#0a1a0a;"
+                elif current == "中間設定": row_bg = "background:#1a1a0a;"
+                elif current == "低設定": row_bg = "background:#1a0a0a;"
+
+                rc = st.columns([1.2, 3, 1.5, 1, 1, 1, 1])
+                with rc[0]:
+                    label_badge = ""
+                    if current:
+                        bc = LABEL_COLORS.get(current, "#7a8aaa")
+                        label_badge = f'<span style="color:{bc};font-size:0.6rem;">●</span> '
+                    st.markdown(f'<div style="font-size:0.8rem;padding:4px 0;">{label_badge}<b>{num}</b></div>', unsafe_allow_html=True)
+                with rc[1]:
+                    short = shorten_name(機種)
+                    st.markdown(f'<div style="font-size:0.7rem;color:#c8d8f0;padding:4px 0;overflow:hidden;white-space:nowrap;">{short}</div>', unsafe_allow_html=True)
+                with rc[2]:
+                    ds = diff_sign(diff) if not np.isnan(diff) else "-"
+                    st.markdown(f'<div style="font-size:0.75rem;color:{diff_c};padding:4px 0;">{ds}</div>', unsafe_allow_html=True)
+                with rc[3]:
+                    if st.button("高", key=f"tbl_h_{num}", use_container_width=True):
+                        st.session_state.table_labels[num_str] = "高設定"
+                        st.rerun()
+                with rc[4]:
+                    if st.button("中", key=f"tbl_m_{num}", use_container_width=True):
+                        st.session_state.table_labels[num_str] = "中間設定"
+                        st.rerun()
+                with rc[5]:
+                    if st.button("低", key=f"tbl_l_{num}", use_container_width=True):
+                        st.session_state.table_labels[num_str] = "低設定"
+                        st.rerun()
+                with rc[6]:
+                    if st.button("不", key=f"tbl_u_{num}", use_container_width=True):
+                        st.session_state.table_labels[num_str] = "不明"
+                        st.rerun()
+
+            # 保存ボタン
+            labeled_count = len(st.session_state.table_labels)
+            if labeled_count > 0:
+                st.markdown("<hr style='border-color:#1e2d45;'>", unsafe_allow_html=True)
+                st.markdown(f'<div style="font-size:0.8rem;color:#00ffcc;margin-bottom:6px;">✅ {labeled_count}台に設定を記録済み</div>', unsafe_allow_html=True)
+                sc1, sc2 = st.columns(2)
+                with sc1:
+                    if st.button(f"💾 {labeled_count}台まとめて保存", use_container_width=True, key="tbl_save"):
+                        success = 0
+                        for num_s, setting in st.session_state.table_labels.items():
+                            matched = df[df["台番"].apply(lambda x: int(x) if not np.isnan(x) else -1) == int(num_s)]
+                            if not matched.empty:
+                                r = matched.iloc[0]
+                                机种 = r["機種名"]
+                                差枚 = int(r["前日差枚"]) if not np.isnan(r["前日差枚"]) else 0
+                                g数 = int(r["回転数"]) if not np.isnan(r["回転数"]) else 0
+                            else:
+                                机种 = "不明"; 差枚 = 0; g数 = 0
+                            if save_label(sel_date, int(num_s), 机种, setting, 差枚, g数):
+                                success += 1
+                        if success > 0:
+                            st.success(f"✅ {success}台の設定を保存しました！")
+                            st.session_state.table_labels = {}
+                            st.rerun()
+                with sc2:
+                    if st.button("🗑 クリア", use_container_width=True, key="tbl_clear"):
+                        st.session_state.table_labels = {}
+                        st.rerun()
+
+        else:
+            # ── テキスト入力モード ──
+            st.markdown('<div style="font-size:0.7rem;color:#7a8aaa;margin-bottom:6px;">1行に「台番 設定」を入力。設定は 高/中/低/不明 で入力。</div>', unsafe_allow_html=True)
+            bulk_text = st.text_area("台番と設定を入力（1行1台）",
+                placeholder="1147 高\n1148 低\n1149 中\n1150 高",
+                height=200, key="bulk_text_input")
+
+            SETTING_MAP = {
+                "高": "高設定", "高設定": "高設定",
+                "中": "中間設定", "中間": "中間設定", "中間設定": "中間設定",
+                "低": "低設定", "低設定": "低設定",
+                "不明": "不明", "？": "不明", "?": "不明",
+            }
+            parsed_entries = []
+            parse_errors = []
+
+            if bulk_text.strip():
+                for line in bulk_text.strip().splitlines():
+                    line = line.strip()
+                    if not line: continue
+                    parts = line.split()
+                    if len(parts) < 2:
+                        parse_errors.append(f"⚠️ 「{line}」→ 形式エラー")
                         continue
-                    # dfから機種名・差枚・G数を取得
-                    matched = df[df["台番"].apply(lambda x: int(x) if not np.isnan(x) else -1) == num]
-                    if not matched.empty:
-                        row = matched.iloc[0]
-                        機種 = row["機種名"]
-                        差枚 = int(row["前日差枚"]) if not np.isnan(row["前日差枚"]) else 0
-                        g数 = int(row["回転数"]) if not np.isnan(row["回転数"]) else 0
-                    else:
-                        機種 = "不明"
-                        差枚 = 0
-                        g数 = 0
-                    parsed_entries.append({
-                        "台番": num, "機種名": 機種, "設定": setting,
-                        "差枚": 差枚, "G数": g数, "日付": sel_date
-                    })
-                except:
-                    parse_errors.append(f"⚠️ 「{line}」→ 台番が数値ではありません")
+                    try:
+                        num = int(parts[0])
+                        setting = SETTING_MAP.get(parts[1])
+                        if not setting:
+                            parse_errors.append(f"⚠️ 「{line}」→ 設定「{parts[1]}」が不明")
+                            continue
+                        matched = df[df["台番"].apply(lambda x: int(x) if not np.isnan(x) else -1) == num]
+                        if not matched.empty:
+                            r = matched.iloc[0]
+                            parsed_entries.append({"台番": num, "機種名": r["機種名"],
+                                "設定": setting,
+                                "差枚": int(r["前日差枚"]) if not np.isnan(r["前日差枚"]) else 0,
+                                "G数": int(r["回転数"]) if not np.isnan(r["回転数"]) else 0,
+                                "日付": sel_date})
+                        else:
+                            parsed_entries.append({"台番": num, "機種名": "不明", "設定": setting, "差枚": 0, "G数": 0, "日付": sel_date})
+                    except:
+                        parse_errors.append(f"⚠️ 「{line}」→ エラー")
 
-        # エラー表示
-        if parse_errors:
             for err in parse_errors:
                 st.markdown(f'<div style="font-size:0.72rem;color:#ff6666;">{err}</div>', unsafe_allow_html=True)
 
-        # プレビュー表示
-        if parsed_entries:
-            st.markdown(f'<div style="font-size:0.8rem;color:#00ffcc;margin:8px 0 4px;">✅ プレビュー（{len(parsed_entries)}台）</div>', unsafe_allow_html=True)
-            for e in parsed_entries:
-                color = LABEL_COLORS.get(e["設定"], "#7a8aaa")
-                diff_c = "#00ff88" if e["差枚"] >= 0 else "#ff4444"
-                st.markdown(
-                    f'<div style="background:#111828;border-left:3px solid {color};border-radius:6px;padding:5px 10px;margin-bottom:3px;font-size:0.75rem;"><span style="color:{color};font-weight:bold;">{e["設定"]}</span>　#{e["台番"]} {e["機種名"][:12]}　<span style="color:{diff_c};">{diff_sign(e["差枚"])}</span>　<span style="color:#7a8aaa;">{e["G数"]:,}G</span></div>',
-                    unsafe_allow_html=True
-                )
-
-            if st.button(f"💾 {len(parsed_entries)}台をまとめて保存", use_container_width=True, key="bulk_text_save"):
-                success = 0
+            if parsed_entries:
+                st.markdown(f'<div style="font-size:0.8rem;color:#00ffcc;margin:6px 0 4px;">✅ プレビュー（{len(parsed_entries)}台）</div>', unsafe_allow_html=True)
                 for e in parsed_entries:
-                    if save_label(e["日付"], e["台番"], e["機種名"], e["設定"], e["差枚"], e["G数"]):
-                        success += 1
-                if success > 0:
-                    st.success(f"✅ {success}台の設定を保存しました！")
-                    st.rerun()
+                    color = LABEL_COLORS.get(e["設定"], "#7a8aaa")
+                    diff_c = "#00ff88" if e["差枚"] >= 0 else "#ff4444"
+                    st.markdown(f'<div style="background:#111828;border-left:3px solid {color};border-radius:6px;padding:5px 10px;margin-bottom:3px;font-size:0.75rem;"><span style="color:{color};font-weight:bold;">{e["設定"]}</span>　#{e["台番"]} {e["機種名"][:12]}　<span style="color:{diff_c};">{diff_sign(e["差枚"])}</span></div>', unsafe_allow_html=True)
+
+                if st.button(f"💾 {len(parsed_entries)}台をまとめて保存", use_container_width=True, key="bulk_text_save"):
+                    success = sum(1 for e in parsed_entries if save_label(e["日付"], e["台番"], e["機種名"], e["設定"], e["差枚"], e["G数"]))
+                    if success > 0:
+                        st.success(f"✅ {success}台の設定を保存しました！")
+                        st.rerun()
 
         st.markdown("<hr style='border-color:#1e2d45;'>", unsafe_allow_html=True)
 
@@ -2687,11 +2781,7 @@ with tab_label:
                 except: diff_v = 0
                 try: g_v = int(row.get("G数", 0))
                 except: g_v = 0
-                memo_v = str(row.get("メモ", ""))
-                st.markdown(
-                    f'<div style="background:#111828;border-left:3px solid {color};border-radius:6px;padding:5px 10px;margin-bottom:3px;font-size:0.75rem;"><span style="color:{color};font-weight:bold;">{setting}</span>　{row.get("日付","")}　台番<b>{row.get("台番","")}</b>　{str(row.get("機種名",""))[:10]}　<span style="color:{"#00ff88" if diff_v>=0 else "#ff4444"};">{diff_sign(diff_v)}</span>　{g_v:,}G{" "+memo_v if memo_v else ""}</div>',
-                    unsafe_allow_html=True
-                )
+                st.markdown(f'<div style="background:#111828;border-left:3px solid {color};border-radius:6px;padding:5px 10px;margin-bottom:3px;font-size:0.75rem;"><span style="color:{color};font-weight:bold;">{setting}</span>　{row.get("日付","")}　台番<b>{row.get("台番","")}</b>　{str(row.get("機種名",""))[:10]}　<span style="color:{"#00ff88" if diff_v>=0 else "#ff4444"};">{diff_sign(diff_v)}</span>　{g_v:,}G</div>', unsafe_allow_html=True)
 
             csv = disp_labels.to_csv(index=False, encoding="utf-8-sig")
             st.download_button("📥 CSVダウンロード", csv, "設定記録.csv", "text/csv", use_container_width=True)
