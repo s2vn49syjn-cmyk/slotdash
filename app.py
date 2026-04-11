@@ -216,22 +216,27 @@ def load_labels():
         return pd.DataFrame(columns=["日付", "台番", "機種名", "設定", "差枚", "G数", "メモ", "記録日時"])
 
 def save_label(date_str, 台番, 機種名, 設定, 差枚, g数, memo=""):
-    """設定ラベルをGoogle Sheetsに保存"""
-    try:
-        client = get_gspread_client()
-        spreadsheet = client.open_by_key(SPREADSHEET_ID)
+    """設定ラベルをGoogle Sheetsに保存（リトライ付き）"""
+    import time as _time
+    for attempt in range(3):
         try:
-            ws = spreadsheet.worksheet(LABEL_SHEET_NAME)
-        except:
-            ws = spreadsheet.add_worksheet(title=LABEL_SHEET_NAME, rows=2000, cols=10)
-            ws.append_row(["日付", "台番", "機種名", "設定", "差枚", "G数", "メモ", "記録日時"])
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-        ws.append_row([date_str, int(台番), 機種名, 設定, 差枚, g数, memo, now_str])
-        load_labels.clear()
-        return True
-    except Exception as e:
-        st.error(f"保存エラー: {e}")
-        return False
+            client = get_gspread_client()
+            spreadsheet = client.open_by_key(SPREADSHEET_ID)
+            try:
+                ws = spreadsheet.worksheet(LABEL_SHEET_NAME)
+            except:
+                ws = spreadsheet.add_worksheet(title=LABEL_SHEET_NAME, rows=2000, cols=10)
+                ws.append_row(["日付", "台番", "機種名", "設定", "差枚", "G数", "メモ", "記録日時"])
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+            ws.append_row([date_str, int(台番), 機種名, 設定, 差枚, g数, memo, now_str])
+            return True
+        except Exception as e:
+            if "429" in str(e) and attempt < 2:
+                _time.sleep(5 * (attempt + 1))  # 5秒、10秒待ってリトライ
+                continue
+            st.error(f"保存エラー: {e}")
+            return False
+    return False
 
 def delete_label(row_index):
     """設定ラベルを削除（行インデックス、2始まり）"""
@@ -2670,20 +2675,34 @@ with tab_label:
                 with sc1:
                     if st.button(f"💾 {labeled_count}台まとめて保存", use_container_width=True, key="tbl_save"):
                         success = 0
+                        import time as _time2
+                        # バッチでまとめて書き込む
+                        client2 = get_gspread_client()
+                        spreadsheet2 = client2.open_by_key(SPREADSHEET_ID)
+                        try:
+                            ws2 = spreadsheet2.worksheet(LABEL_SHEET_NAME)
+                        except:
+                            ws2 = spreadsheet2.add_worksheet(title=LABEL_SHEET_NAME, rows=2000, cols=10)
+                            ws2.append_row(["日付", "台番", "機種名", "設定", "差枚", "G数", "メモ", "記録日時"])
+                        now_str2 = datetime.now().strftime("%Y-%m-%d %H:%M")
+                        batch_rows = []
                         for num_s, setting in st.session_state.table_labels.items():
                             matched = df[df["台番"].apply(lambda x: int(x) if not np.isnan(x) else -1) == int(num_s)]
                             if not matched.empty:
                                 r = matched.iloc[0]
                                 机种 = r["機種名"]
-                                差枚 = int(r["前日差枚"]) if not np.isnan(r["前日差枚"]) else 0
-                                g数 = int(r["回転数"]) if not np.isnan(r["回転数"]) else 0
+                                差枚v = int(r["前日差枚"]) if not np.isnan(r["前日差枚"]) else 0
+                                g数v = int(r["回転数"]) if not np.isnan(r["回転数"]) else 0
                             else:
-                                机种 = "不明"; 差枚 = 0; g数 = 0
-                            if save_label(sel_date, int(num_s), 机种, setting, 差枚, g数):
-                                success += 1
+                                机种 = "不明"; 差枚v = 0; g数v = 0
+                            batch_rows.append([sel_date, int(num_s), 机种, setting, 差枚v, g数v, "", now_str2])
+                        if batch_rows:
+                            ws2.append_rows(batch_rows)
+                            success = len(batch_rows)
                         if success > 0:
                             st.success(f"✅ {success}台の設定を保存しました！")
                             st.session_state.table_labels = {}
+                            load_labels.clear()
                             st.rerun()
                 with sc2:
                     if st.button("🗑 クリア", use_container_width=True, key="tbl_clear"):
@@ -2744,10 +2763,22 @@ with tab_label:
                     st.markdown(f'<div style="background:#111828;border-left:3px solid {color};border-radius:6px;padding:5px 10px;margin-bottom:3px;font-size:0.75rem;"><span style="color:{color};font-weight:bold;">{e["設定"]}</span>　#{e["台番"]} {e["機種名"][:12]}　<span style="color:{diff_c};">{diff_sign(e["差枚"])}</span></div>', unsafe_allow_html=True)
 
                 if st.button(f"💾 {len(parsed_entries)}台をまとめて保存", use_container_width=True, key="bulk_text_save"):
-                    success = sum(1 for e in parsed_entries if save_label(e["日付"], e["台番"], e["機種名"], e["設定"], e["差枚"], e["G数"]))
-                    if success > 0:
-                        st.success(f"✅ {success}台の設定を保存しました！")
+                    try:
+                        client3 = get_gspread_client()
+                        sp3 = client3.open_by_key(SPREADSHEET_ID)
+                        try:
+                            ws3 = sp3.worksheet(LABEL_SHEET_NAME)
+                        except:
+                            ws3 = sp3.add_worksheet(title=LABEL_SHEET_NAME, rows=2000, cols=10)
+                            ws3.append_row(["日付", "台番", "機種名", "設定", "差枚", "G数", "メモ", "記録日時"])
+                        now3 = datetime.now().strftime("%Y-%m-%d %H:%M")
+                        rows3 = [[e["日付"], e["台番"], e["機種名"], e["設定"], e["差枚"], e["G数"], "", now3] for e in parsed_entries]
+                        ws3.append_rows(rows3)
+                        st.success(f"✅ {len(rows3)}台の設定を保存しました！")
+                        load_labels.clear()
                         st.rerun()
+                    except Exception as e3:
+                        st.error(f"保存エラー: {e3}")
 
         st.markdown("<hr style='border-color:#1e2d45;'>", unsafe_allow_html=True)
 
