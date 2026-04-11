@@ -2568,56 +2568,109 @@ with tab_label:
         st.info("データを読み込み中です...")
     else:
         st.markdown('<div class="section-title">🏷 設定記録</div>', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:0.72rem;color:#7a8aaa;margin-bottom:8px;">台ごとに設定を記録して蓄積。分析タブでホールの傾向を分析できます。</div>', unsafe_allow_html=True)
 
-        # ── 新規記録 ──
-        st.markdown('<div style="font-size:0.8rem;color:#00ffcc;margin-bottom:6px;">📝 新規記録</div>', unsafe_allow_html=True)
-
-        # 日付（データの日付を使う）
         history, date_labels = load_history()
         available_dates = sorted(date_labels, reverse=True) if date_labels else []
+
+        # ── 日付選択 ──
         if available_dates:
             sel_date = st.selectbox("対象日付", available_dates, key="lbl_date")
         else:
             sel_date = st.text_input("対象日付 (例: 2026-04-01)", key="lbl_date_text")
 
-        # 台番選択
-        machine_options = df.apply(
-            lambda r: f"#{int(r['台番']) if not np.isnan(r['台番']) else '?'} {r['機種名']} ({diff_sign(r['前日差枚'])})",
-            axis=1
-        ).tolist()
-        sel_machine_lbl = st.selectbox("台番・機種名", machine_options, key="lbl_machine")
-        sel_idx_lbl = machine_options.index(sel_machine_lbl)
-        sel_row_lbl = df.iloc[sel_idx_lbl]
-        台番_lbl = int(sel_row_lbl["台番"]) if not np.isnan(sel_row_lbl["台番"]) else 0
-        機種_lbl = sel_row_lbl["機種名"]
-        差枚_lbl = sel_row_lbl["前日差枚"] if not np.isnan(sel_row_lbl["前日差枚"]) else 0
-        g数_lbl = sel_row_lbl["回転数"] if not np.isnan(sel_row_lbl["回転数"]) else 0
+        st.markdown('<div style="font-size:0.72rem;color:#7a8aaa;margin-bottom:8px;">台番を入力して設定をタップ → まとめて保存</div>', unsafe_allow_html=True)
 
-        # 設定選択
-        lc1, lc2 = st.columns(2)
-        with lc1:
-            sel_setting = st.selectbox("設定", LABEL_OPTIONS, key="lbl_setting")
-        with lc2:
-            lbl_memo = st.text_input("メモ（任意）", placeholder="例: 挙動が良かった", key="lbl_memo")
+        # ── セッションステートで一時リストを管理 ──
+        if "bulk_labels" not in st.session_state:
+            st.session_state.bulk_labels = []
 
-        # 現在の履歴も表示
-        history_str = ""
-        if history and 台番_lbl:
-            mh = history.get(台番_lbl, {})
-            dates = sorted(mh.keys(), reverse=True)[:5]
-            if dates:
-                history_str = " / ".join([f"{d[-5:]}: {diff_sign(mh[d]['diff'])}" for d in dates])
-                st.markdown(f'<div style="font-size:0.7rem;color:#7a8aaa;margin-bottom:4px;">📊 履歴: {history_str}</div>', unsafe_allow_html=True)
+        # ── 台番入力エリア ──
+        inp_c1, inp_c2 = st.columns([2, 1])
+        with inp_c1:
+            bulk_num_input = st.text_input("台番を入力", placeholder="例: 1147", key="bulk_num")
+        with inp_c2:
+            st.markdown("<div style='margin-top:1.6rem;'></div>", unsafe_allow_html=True)
+            bulk_search = st.button("🔍 検索", use_container_width=True, key="bulk_search_btn")
 
-        color = LABEL_COLORS.get(sel_setting, "#7a8aaa")
-        st.markdown(f'<div style="background:#111828;border:1px solid {color};border-radius:8px;padding:8px;margin-bottom:8px;font-size:0.8rem;">台番 <b>{台番_lbl}</b> / {機種_lbl} / <span style="color:{color}"><b>{sel_setting}</b></span> / 差枚 {diff_sign(差枚_lbl)} / {int(g数_lbl):,}G</div>', unsafe_allow_html=True)
+        # 台番検索して設定ボタンを表示
+        if bulk_num_input and bulk_search:
+            try:
+                search_num = int(bulk_num_input.strip())
+                matched = df[df["台番"].apply(lambda x: int(x) if not np.isnan(x) else -1) == search_num]
+                if not matched.empty:
+                    row = matched.iloc[0]
+                    st.session_state["bulk_current"] = {
+                        "台番": search_num,
+                        "機種名": row["機種名"],
+                        "差枚": int(row["前日差枚"]) if not np.isnan(row["前日差枚"]) else 0,
+                        "G数": int(row["回転数"]) if not np.isnan(row["回転数"]) else 0,
+                    }
+                else:
+                    st.warning(f"台番 {search_num} が見つかりません")
+            except:
+                st.error("正しい台番を入力してください")
 
-        if st.button("💾 記録を保存", use_container_width=True, key="lbl_save"):
-            date_to_save = sel_date if available_dates else sel_date
-            if save_label(date_to_save, 台番_lbl, 機種_lbl, sel_setting, int(差枚_lbl), int(g数_lbl), lbl_memo):
-                st.success(f"✅ 台番{台番_lbl}の設定記録を保存しました！")
+        # 検索結果表示 & 設定選択
+        if "bulk_current" in st.session_state:
+            cur = st.session_state["bulk_current"]
+            diff_c = "#00ff88" if cur["差枚"] >= 0 else "#ff4444"
+            _html = f'<div style="background:#111828;border:1px solid #1e2d45;border-radius:8px;padding:8px;margin-bottom:8px;"><b>#{cur["台番"]}</b> {cur["機種名"]}<br><span style="font-size:0.75rem;color:{diff_c};">{diff_sign(cur["差枚"])}</span> <span style="font-size:0.72rem;color:#7a8aaa;">/ {cur["G数"]:,}G</span></div>'
+            st.markdown(_html, unsafe_allow_html=True)
+
+            # 設定ボタン（横並び・大きめ）
+            btn_cols = st.columns(4)
+            setting_added = None
+            for i, opt in enumerate(LABEL_OPTIONS):
+                c = LABEL_COLORS[opt]
+                with btn_cols[i]:
+                    if st.button(opt, key=f"bulk_set_{opt}", use_container_width=True):
+                        setting_added = opt
+
+            if setting_added:
+                # リストに追加
+                entry = {**cur, "設定": setting_added, "日付": sel_date}
+                # 同じ台番が既にあれば上書き
+                st.session_state.bulk_labels = [
+                    x for x in st.session_state.bulk_labels if x["台番"] != cur["台番"]
+                ]
+                st.session_state.bulk_labels.append(entry)
+                del st.session_state["bulk_current"]
                 st.rerun()
+
+        # ── 入力済みリスト ──
+        if st.session_state.bulk_labels:
+            st.markdown(f'<div style="font-size:0.8rem;color:#00ffcc;margin-bottom:6px;">📋 入力済み: {len(st.session_state.bulk_labels)}台</div>', unsafe_allow_html=True)
+
+            for i, entry in enumerate(st.session_state.bulk_labels):
+                color = LABEL_COLORS.get(entry["設定"], "#7a8aaa")
+                diff_c2 = "#00ff88" if entry["差枚"] >= 0 else "#ff4444"
+                ec1, ec2 = st.columns([4, 1])
+                with ec1:
+                    _ehtml = f'<div style="background:#111828;border-left:3px solid {color};border-radius:6px;padding:6px 10px;font-size:0.75rem;margin-bottom:3px;"><span style="color:{color};font-weight:bold;">{entry["設定"]}</span>　#{entry["台番"]} {entry["機種名"][:10]}　<span style="color:{diff_c2};">{diff_sign(entry["差枚"])}</span>　<span style="color:#7a8aaa;">{entry["G数"]:,}G</span></div>'
+                st.markdown(_ehtml, unsafe_allow_html=True)
+                with ec2:
+                    if st.button("✕", key=f"bulk_del_{i}", use_container_width=True):
+                        st.session_state.bulk_labels.pop(i)
+                        st.rerun()
+
+            # まとめて保存ボタン
+            st.markdown("<div style='margin-top:8px;'></div>", unsafe_allow_html=True)
+            sc1, sc2 = st.columns(2)
+            with sc1:
+                if st.button(f"💾 {len(st.session_state.bulk_labels)}台まとめて保存", use_container_width=True, key="bulk_save"):
+                    success_count = 0
+                    for entry in st.session_state.bulk_labels:
+                        if save_label(entry["日付"], entry["台番"], entry["機種名"],
+                                     entry["設定"], entry["差枚"], entry["G数"]):
+                            success_count += 1
+                    if success_count > 0:
+                        st.success(f"✅ {success_count}台の設定を保存しました！")
+                        st.session_state.bulk_labels = []
+                        st.rerun()
+            with sc2:
+                if st.button("🗑 リストをクリア", use_container_width=True, key="bulk_clear"):
+                    st.session_state.bulk_labels = []
+                    st.rerun()
 
         st.markdown("<hr style='border-color:#1e2d45;'>", unsafe_allow_html=True)
 
@@ -2626,43 +2679,35 @@ with tab_label:
         labels_df = load_labels()
 
         if labels_df.empty:
-            st.info("まだ記録がありません。上のフォームから記録を追加してください。")
+            st.info("まだ記録がありません。")
         else:
-            # フィルタ
             lf1, lf2 = st.columns(2)
             with lf1:
                 filter_setting = st.multiselect("設定でフィルタ", LABEL_OPTIONS, default=[], key="lbl_filter_setting")
             with lf2:
-                filter_machine = st.multiselect("機種でフィルタ", sorted(labels_df["機種名"].unique().tolist()) if "機種名" in labels_df.columns else [], default=[], key="lbl_filter_machine")
+                filter_machine_lbl = st.multiselect("機種でフィルタ", sorted(labels_df["機種名"].unique().tolist()) if "機種名" in labels_df.columns else [], default=[], key="lbl_filter_machine")
 
             disp_labels = labels_df.copy()
             if filter_setting:
                 disp_labels = disp_labels[disp_labels["設定"].isin(filter_setting)]
-            if filter_machine:
-                disp_labels = disp_labels[disp_labels["機種名"].isin(filter_machine)]
+            if filter_machine_lbl:
+                disp_labels = disp_labels[disp_labels["機種名"].isin(filter_machine_lbl)]
 
             st.markdown(f'<div style="font-size:0.72rem;color:#7a8aaa;margin-bottom:4px;">{len(disp_labels)}件</div>', unsafe_allow_html=True)
 
-            # 色付きバッジで表示
             for i, row in disp_labels.tail(30).iloc[::-1].iterrows():
                 setting = str(row.get("設定", "不明"))
                 color = LABEL_COLORS.get(setting, "#7a8aaa")
-                diff_v = row.get("差枚", 0)
-                try: diff_v = int(diff_v)
-                except: diff_v = 0
-                g_v = row.get("G数", 0)
-                try: g_v = int(g_v)
-                except: g_v = 0
+                diff_v = 0
+                try: diff_v = int(row.get("差枚", 0))
+                except: pass
+                g_v = 0
+                try: g_v = int(row.get("G数", 0))
+                except: pass
                 memo_v = str(row.get("メモ", ""))
-                st.markdown(f"""<div style="background:#111828;border-left:3px solid {color};border-radius:6px;padding:6px 10px;margin-bottom:4px;font-size:0.75rem;">
-                  <div style="display:flex;justify-content:space-between;">
-                    <span style="color:{color};font-weight:bold;">{setting}</span>
-                    <span style="color:#7a8aaa;">{row.get('日付','')}</span>
-                  </div>
-                  <div>台番 <b>{row.get('台番','')}</b> / {str(row.get('機種名',''))[:15]} / {diff_sign(diff_v)} / {g_v:,}G{' / ' + memo_v if memo_v else ''}</div>
-                </div>""", unsafe_allow_html=True)
+                _rhtml = f'<div style="background:#111828;border-left:3px solid {color};border-radius:6px;padding:6px 10px;margin-bottom:4px;font-size:0.75rem;"><div style="display:flex;justify-content:space-between;"><span style="color:{color};font-weight:bold;">{setting}</span><span style="color:#7a8aaa;">{row.get("日付","")}</span></div><div>台番 <b>{row.get("台番","")}</b> / {str(row.get("機種名",""))[:12]} / {diff_sign(diff_v)} / {g_v:,}G{" / "+memo_v if memo_v else ""}</div></div>'
+                st.markdown(_rhtml, unsafe_allow_html=True)
 
-            # CSV出力
             csv = disp_labels.to_csv(index=False, encoding="utf-8-sig")
             st.download_button("📥 CSVダウンロード", csv, "設定記録.csv", "text/csv", use_container_width=True)
 
