@@ -195,7 +195,7 @@ LABEL_SHEET_NAME = "設定記録"
 LABEL_OPTIONS = ["高設定", "中間設定", "低設定", "不明"]
 LABEL_COLORS = {"高設定": "#00ff88", "中間設定": "#ffcc00", "低設定": "#ff4444", "不明": "#7a8aaa"}
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_labels():
     """設定ラベルをGoogle Sheetsから読み込む"""
     try:
@@ -2753,38 +2753,46 @@ with tab_label:
 
         # ── 記録一覧 ──
         st.markdown('<div style="font-size:0.8rem;color:#00ffcc;margin-bottom:6px;">📋 記録一覧</div>', unsafe_allow_html=True)
-        labels_df = load_labels()
-
-        if labels_df.empty:
-            st.info("まだ記録がありません。")
+        if "show_labels" not in st.session_state:
+            st.session_state.show_labels = False
+        if st.button("📋 記録一覧を表示/更新", use_container_width=True, key="lbl_show"):
+            st.session_state.show_labels = True
+            load_labels.clear()
+        if not st.session_state.show_labels:
+            st.info("「記録一覧を表示/更新」を押すと表示されます")
         else:
-            lf1, lf2 = st.columns(2)
-            with lf1:
-                filter_setting = st.multiselect("設定でフィルタ", LABEL_OPTIONS, default=[], key="lbl_filter_setting")
-            with lf2:
-                filter_machine_lbl = st.multiselect("機種でフィルタ",
-                    sorted(labels_df["機種名"].unique().tolist()) if "機種名" in labels_df.columns else [],
-                    default=[], key="lbl_filter_machine")
+            labels_df = load_labels()
 
-            disp_labels = labels_df.copy()
-            if filter_setting:
-                disp_labels = disp_labels[disp_labels["設定"].isin(filter_setting)]
-            if filter_machine_lbl:
-                disp_labels = disp_labels[disp_labels["機種名"].isin(filter_machine_lbl)]
+            if labels_df.empty:
+                st.info("まだ記録がありません。")
+            else:
+                lf1, lf2 = st.columns(2)
+                with lf1:
+                    filter_setting = st.multiselect("設定でフィルタ", LABEL_OPTIONS, default=[], key="lbl_filter_setting")
+                with lf2:
+                    filter_machine_lbl = st.multiselect("機種でフィルタ",
+                        sorted(labels_df["機種名"].unique().tolist()) if "機種名" in labels_df.columns else [],
+                        default=[], key="lbl_filter_machine")
 
-            st.markdown(f'<div style="font-size:0.72rem;color:#7a8aaa;margin-bottom:4px;">{len(disp_labels)}件</div>', unsafe_allow_html=True)
+                disp_labels = labels_df.copy()
+                if filter_setting:
+                    disp_labels = disp_labels[disp_labels["設定"].isin(filter_setting)]
+                if filter_machine_lbl:
+                    disp_labels = disp_labels[disp_labels["機種名"].isin(filter_machine_lbl)]
 
-            for i, row in disp_labels.tail(50).iloc[::-1].iterrows():
-                setting = str(row.get("設定", "不明"))
-                color = LABEL_COLORS.get(setting, "#7a8aaa")
-                try: diff_v = int(row.get("差枚", 0))
-                except: diff_v = 0
-                try: g_v = int(row.get("G数", 0))
-                except: g_v = 0
-                st.markdown(f'<div style="background:#111828;border-left:3px solid {color};border-radius:6px;padding:5px 10px;margin-bottom:3px;font-size:0.75rem;"><span style="color:{color};font-weight:bold;">{setting}</span>　{row.get("日付","")}　台番<b>{row.get("台番","")}</b>　{str(row.get("機種名",""))[:10]}　<span style="color:{"#00ff88" if diff_v>=0 else "#ff4444"};">{diff_sign(diff_v)}</span>　{g_v:,}G</div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="font-size:0.72rem;color:#7a8aaa;margin-bottom:4px;">{len(disp_labels)}件</div>', unsafe_allow_html=True)
 
-            csv = disp_labels.to_csv(index=False, encoding="utf-8-sig")
-            st.download_button("📥 CSVダウンロード", csv, "設定記録.csv", "text/csv", use_container_width=True)
+                for i, row in disp_labels.tail(50).iloc[::-1].iterrows():
+                    setting = str(row.get("設定", "不明"))
+                    color = LABEL_COLORS.get(setting, "#7a8aaa")
+                    try: diff_v = int(row.get("差枚", 0))
+                    except: diff_v = 0
+                    try: g_v = int(row.get("G数", 0))
+                    except: g_v = 0
+                    st.markdown(f'<div style="background:#111828;border-left:3px solid {color};border-radius:6px;padding:5px 10px;margin-bottom:3px;font-size:0.75rem;"><span style="color:{color};font-weight:bold;">{setting}</span>　{row.get("日付","")}　台番<b>{row.get("台番","")}</b>　{str(row.get("機種名",""))[:10]}　<span style="color:{"#00ff88" if diff_v>=0 else "#ff4444"};">{diff_sign(diff_v)}</span>　{g_v:,}G</div>', unsafe_allow_html=True)
+
+                csv = disp_labels.to_csv(index=False, encoding="utf-8-sig")
+                st.download_button("📥 CSVダウンロード", csv, "設定記録.csv", "text/csv", use_container_width=True)
 
 
 # ════════════════════════════════════════════
