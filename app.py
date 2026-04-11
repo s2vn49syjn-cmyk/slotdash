@@ -188,6 +188,65 @@ def load_history(max_days=10):
     except Exception as e:
         return {}, []
 
+# ─────────────────────────────────────────────
+# 設定ラベル管理（Google Sheets「設定記録」シート）
+# ─────────────────────────────────────────────
+LABEL_SHEET_NAME = "設定記録"
+LABEL_OPTIONS = ["高設定", "中間設定", "低設定", "不明"]
+LABEL_COLORS = {"高設定": "#00ff88", "中間設定": "#ffcc00", "低設定": "#ff4444", "不明": "#7a8aaa"}
+
+@st.cache_data(ttl=60)
+def load_labels():
+    """設定ラベルをGoogle Sheetsから読み込む"""
+    try:
+        client = get_gspread_client()
+        spreadsheet = client.open_by_key(SPREADSHEET_ID)
+        try:
+            ws = spreadsheet.worksheet(LABEL_SHEET_NAME)
+        except:
+            ws = spreadsheet.add_worksheet(title=LABEL_SHEET_NAME, rows=2000, cols=10)
+            ws.append_row(["日付", "台番", "機種名", "設定", "差枚", "G数", "メモ", "記録日時"])
+            return pd.DataFrame(columns=["日付", "台番", "機種名", "設定", "差枚", "G数", "メモ", "記録日時"])
+        data = ws.get_all_records()
+        if not data:
+            return pd.DataFrame(columns=["日付", "台番", "機種名", "設定", "差枚", "G数", "メモ", "記録日時"])
+        return pd.DataFrame(data)
+    except Exception as e:
+        st.warning(f"設定記録読み込みエラー: {e}")
+        return pd.DataFrame(columns=["日付", "台番", "機種名", "設定", "差枚", "G数", "メモ", "記録日時"])
+
+def save_label(date_str, 台番, 機種名, 設定, 差枚, g数, memo=""):
+    """設定ラベルをGoogle Sheetsに保存"""
+    try:
+        client = get_gspread_client()
+        spreadsheet = client.open_by_key(SPREADSHEET_ID)
+        try:
+            ws = spreadsheet.worksheet(LABEL_SHEET_NAME)
+        except:
+            ws = spreadsheet.add_worksheet(title=LABEL_SHEET_NAME, rows=2000, cols=10)
+            ws.append_row(["日付", "台番", "機種名", "設定", "差枚", "G数", "メモ", "記録日時"])
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        ws.append_row([date_str, int(台番), 機種名, 設定, 差枚, g数, memo, now_str])
+        load_labels.clear()
+        return True
+    except Exception as e:
+        st.error(f"保存エラー: {e}")
+        return False
+
+def delete_label(row_index):
+    """設定ラベルを削除（行インデックス、2始まり）"""
+    try:
+        client = get_gspread_client()
+        spreadsheet = client.open_by_key(SPREADSHEET_ID)
+        ws = spreadsheet.worksheet(LABEL_SHEET_NAME)
+        ws.delete_rows(row_index + 2)  # ヘッダー行+1
+        load_labels.clear()
+        return True
+    except Exception as e:
+        st.error(f"削除エラー: {e}")
+        return False
+
+
 def process_df(df_raw):
     df = pd.DataFrame()
     cols = {c.strip(): c for c in df_raw.columns}
@@ -1493,8 +1552,8 @@ with col_h2:
     if st.button("🔄 更新", use_container_width=True):
         st.cache_data.clear(); load_data(); st.rerun()
 
-tab_home, tab_osusume, tab_alert, tab_hold, tab_island, tab_trend, tab_all, tab_memo, tab_island_edit = st.tabs([
-    "🏠 ホーム", "⭐ おすすめ", "🔔 アラート", "🎯 据え置き", "🗺 島図", "📈 トレンド", "📋 全台", "⭐ メモ", "⚙ 島設定"
+tab_home, tab_osusume, tab_alert, tab_hold, tab_island, tab_trend, tab_all, tab_memo, tab_label, tab_analysis, tab_island_edit = st.tabs([
+    "🏠 ホーム", "⭐ おすすめ", "🔔 アラート", "🎯 据え置き", "🗺 島図", "📈 トレンド", "📋 全台", "⭐ メモ", "🏷 設定記録", "🔬 分析", "⚙ 島設定"
 ])
 
 with tab_home:
@@ -2498,6 +2557,194 @@ with tab_memo:
                   </div>{'<div class="memo-box">📝 '+memo+'</div>' if memo else ''}</div>""", unsafe_allow_html=True)
         else:
             st.markdown('<div style="color:#7a8aaa;font-size:0.8rem;">星印をつけた台はまだありません</div>', unsafe_allow_html=True)
+
+
+# ════════════════════════════════════════════
+# 🏷 設定記録タブ
+# ════════════════════════════════════════════
+with tab_label:
+    df = st.session_state.df_main
+    if df is None:
+        st.info("データを読み込み中です...")
+    else:
+        st.markdown('<div class="section-title">🏷 設定記録</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:0.72rem;color:#7a8aaa;margin-bottom:8px;">台ごとに設定を記録して蓄積。分析タブでホールの傾向を分析できます。</div>', unsafe_allow_html=True)
+
+        # ── 新規記録 ──
+        st.markdown('<div style="font-size:0.8rem;color:#00ffcc;margin-bottom:6px;">📝 新規記録</div>', unsafe_allow_html=True)
+
+        # 日付（データの日付を使う）
+        history, date_labels = load_history()
+        available_dates = sorted(date_labels, reverse=True) if date_labels else []
+        if available_dates:
+            sel_date = st.selectbox("対象日付", available_dates, key="lbl_date")
+        else:
+            sel_date = st.text_input("対象日付 (例: 2026-04-01)", key="lbl_date_text")
+
+        # 台番選択
+        machine_options = df.apply(
+            lambda r: f"#{int(r['台番']) if not np.isnan(r['台番']) else '?'} {r['機種名']} ({diff_sign(r['前日差枚'])})",
+            axis=1
+        ).tolist()
+        sel_machine_lbl = st.selectbox("台番・機種名", machine_options, key="lbl_machine")
+        sel_idx_lbl = machine_options.index(sel_machine_lbl)
+        sel_row_lbl = df.iloc[sel_idx_lbl]
+        台番_lbl = int(sel_row_lbl["台番"]) if not np.isnan(sel_row_lbl["台番"]) else 0
+        機種_lbl = sel_row_lbl["機種名"]
+        差枚_lbl = sel_row_lbl["前日差枚"] if not np.isnan(sel_row_lbl["前日差枚"]) else 0
+        g数_lbl = sel_row_lbl["回転数"] if not np.isnan(sel_row_lbl["回転数"]) else 0
+
+        # 設定選択
+        lc1, lc2 = st.columns(2)
+        with lc1:
+            sel_setting = st.selectbox("設定", LABEL_OPTIONS, key="lbl_setting")
+        with lc2:
+            lbl_memo = st.text_input("メモ（任意）", placeholder="例: 挙動が良かった", key="lbl_memo")
+
+        # 現在の履歴も表示
+        history_str = ""
+        if history and 台番_lbl:
+            mh = history.get(台番_lbl, {})
+            dates = sorted(mh.keys(), reverse=True)[:5]
+            if dates:
+                history_str = " / ".join([f"{d[-5:]}: {diff_sign(mh[d]['diff'])}" for d in dates])
+                st.markdown(f'<div style="font-size:0.7rem;color:#7a8aaa;margin-bottom:4px;">📊 履歴: {history_str}</div>', unsafe_allow_html=True)
+
+        color = LABEL_COLORS.get(sel_setting, "#7a8aaa")
+        st.markdown(f'<div style="background:#111828;border:1px solid {color};border-radius:8px;padding:8px;margin-bottom:8px;font-size:0.8rem;">台番 <b>{台番_lbl}</b> / {機種_lbl} / <span style="color:{color}"><b>{sel_setting}</b></span> / 差枚 {diff_sign(差枚_lbl)} / {int(g数_lbl):,}G</div>', unsafe_allow_html=True)
+
+        if st.button("💾 記録を保存", use_container_width=True, key="lbl_save"):
+            date_to_save = sel_date if available_dates else sel_date
+            if save_label(date_to_save, 台番_lbl, 機種_lbl, sel_setting, int(差枚_lbl), int(g数_lbl), lbl_memo):
+                st.success(f"✅ 台番{台番_lbl}の設定記録を保存しました！")
+                st.rerun()
+
+        st.markdown("<hr style='border-color:#1e2d45;'>", unsafe_allow_html=True)
+
+        # ── 記録一覧 ──
+        st.markdown('<div style="font-size:0.8rem;color:#00ffcc;margin-bottom:6px;">📋 記録一覧</div>', unsafe_allow_html=True)
+        labels_df = load_labels()
+
+        if labels_df.empty:
+            st.info("まだ記録がありません。上のフォームから記録を追加してください。")
+        else:
+            # フィルタ
+            lf1, lf2 = st.columns(2)
+            with lf1:
+                filter_setting = st.multiselect("設定でフィルタ", LABEL_OPTIONS, default=[], key="lbl_filter_setting")
+            with lf2:
+                filter_machine = st.multiselect("機種でフィルタ", sorted(labels_df["機種名"].unique().tolist()) if "機種名" in labels_df.columns else [], default=[], key="lbl_filter_machine")
+
+            disp_labels = labels_df.copy()
+            if filter_setting:
+                disp_labels = disp_labels[disp_labels["設定"].isin(filter_setting)]
+            if filter_machine:
+                disp_labels = disp_labels[disp_labels["機種名"].isin(filter_machine)]
+
+            st.markdown(f'<div style="font-size:0.72rem;color:#7a8aaa;margin-bottom:4px;">{len(disp_labels)}件</div>', unsafe_allow_html=True)
+
+            # 色付きバッジで表示
+            for i, row in disp_labels.tail(30).iloc[::-1].iterrows():
+                setting = str(row.get("設定", "不明"))
+                color = LABEL_COLORS.get(setting, "#7a8aaa")
+                diff_v = row.get("差枚", 0)
+                try: diff_v = int(diff_v)
+                except: diff_v = 0
+                g_v = row.get("G数", 0)
+                try: g_v = int(g_v)
+                except: g_v = 0
+                memo_v = str(row.get("メモ", ""))
+                st.markdown(f"""<div style="background:#111828;border-left:3px solid {color};border-radius:6px;padding:6px 10px;margin-bottom:4px;font-size:0.75rem;">
+                  <div style="display:flex;justify-content:space-between;">
+                    <span style="color:{color};font-weight:bold;">{setting}</span>
+                    <span style="color:#7a8aaa;">{row.get('日付','')}</span>
+                  </div>
+                  <div>台番 <b>{row.get('台番','')}</b> / {str(row.get('機種名',''))[:15]} / {diff_sign(diff_v)} / {g_v:,}G{' / ' + memo_v if memo_v else ''}</div>
+                </div>""", unsafe_allow_html=True)
+
+            # CSV出力
+            csv = disp_labels.to_csv(index=False, encoding="utf-8-sig")
+            st.download_button("📥 CSVダウンロード", csv, "設定記録.csv", "text/csv", use_container_width=True)
+
+
+# ════════════════════════════════════════════
+# 🔬 分析タブ
+# ════════════════════════════════════════════
+with tab_analysis:
+    st.markdown('<div class="section-title">🔬 設定傾向分析</div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-size:0.72rem;color:#7a8aaa;margin-bottom:8px;">記録が50件以上溜まると傾向が見えてきます。</div>', unsafe_allow_html=True)
+
+    labels_df = load_labels()
+
+    if labels_df.empty or len(labels_df) < 5:
+        st.info(f"まだデータが少なすぎます（{len(labels_df)}件）。設定記録タブで記録を蓄積してください。")
+    else:
+        high_df = labels_df[labels_df["設定"] == "高設定"]
+        mid_df = labels_df[labels_df["設定"] == "中間設定"]
+        low_df = labels_df[labels_df["設定"] == "低設定"]
+
+        # サマリ
+        ac1, ac2, ac3, ac4 = st.columns(4)
+        ac1.metric("総記録数", f"{len(labels_df)}件")
+        ac2.metric("高設定", f"{len(high_df)}件", delta=f"{len(high_df)/len(labels_df)*100:.0f}%")
+        ac3.metric("中間設定", f"{len(mid_df)}件")
+        ac4.metric("低設定", f"{len(low_df)}件")
+
+        # ── 機種別集計 ──
+        st.markdown('<div class="section-title">🎰 機種別 設定傾向</div>', unsafe_allow_html=True)
+        if "機種名" in labels_df.columns and "設定" in labels_df.columns:
+            machine_stats = labels_df.groupby(["機種名", "設定"]).size().unstack(fill_value=0)
+            machine_stats["合計"] = machine_stats.sum(axis=1)
+            if "高設定" in machine_stats.columns:
+                machine_stats["高設定率"] = (machine_stats["高設定"] / machine_stats["合計"] * 100).round(1)
+            machine_stats = machine_stats.sort_values("合計", ascending=False)
+            st.dataframe(machine_stats, use_container_width=True)
+
+        # ── 台番帯別集計 ──
+        st.markdown('<div class="section-title">🔢 台番帯別 設定傾向</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:0.7rem;color:#7a8aaa;margin-bottom:6px;">どの台番帯に高設定が集中しているか</div>', unsafe_allow_html=True)
+        if "台番" in labels_df.columns:
+            try:
+                labels_df["台番帯"] = (labels_df["台番"].astype(int) // 10) * 10
+                band_stats = labels_df.groupby(["台番帯", "設定"]).size().unstack(fill_value=0)
+                band_stats["合計"] = band_stats.sum(axis=1)
+                if "高設定" in band_stats.columns:
+                    band_stats["高設定率%"] = (band_stats["高設定"] / band_stats["合計"] * 100).round(1)
+                band_stats = band_stats.sort_values("高設定率%" if "高設定率%" in band_stats.columns else "合計", ascending=False)
+                st.dataframe(band_stats.head(20), use_container_width=True)
+            except: pass
+
+        # ── 差枚・回転数の特徴 ──
+        st.markdown('<div class="section-title">📊 設定別 差枚・回転数の特徴</div>', unsafe_allow_html=True)
+        try:
+            for setting in ["高設定", "中間設定", "低設定"]:
+                sdf = labels_df[labels_df["設定"] == setting]
+                if len(sdf) < 2: continue
+                color = LABEL_COLORS.get(setting, "#7a8aaa")
+                try:
+                    avg_diff = sdf["差枚"].astype(float).mean()
+                    avg_g = sdf["G数"].astype(float).mean()
+                    med_diff = sdf["差枚"].astype(float).median()
+                except: continue
+                html = f'<div style="background:#111828;border-left:3px solid {color};border-radius:6px;padding:8px;margin-bottom:6px;"><span style="color:{color};font-weight:bold;">{setting}</span>（{len(sdf)}件）<br><span style="font-size:0.75rem;color:#a0b0cc;">平均差枚: {diff_sign(avg_diff)} / 中央値: {diff_sign(med_diff)} / 平均G数: {avg_g:,.0f}G</span></div>'
+                st.markdown(html, unsafe_allow_html=True)
+        except: pass
+
+        # ── 曜日別傾向 ──
+        st.markdown('<div class="section-title">📅 曜日別 高設定傾向</div>', unsafe_allow_html=True)
+        try:
+            labels_df["曜日"] = pd.to_datetime(labels_df["日付"]).dt.day_name()
+            day_order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+            day_ja = {"Monday":"月","Tuesday":"火","Wednesday":"水","Thursday":"木","Friday":"金","Saturday":"土","Sunday":"日"}
+            day_stats = labels_df.groupby(["曜日", "設定"]).size().unstack(fill_value=0)
+            day_stats["合計"] = day_stats.sum(axis=1)
+            if "高設定" in day_stats.columns:
+                day_stats["高設定率%"] = (day_stats["高設定"] / day_stats["合計"] * 100).round(1)
+            day_stats = day_stats.reindex([d for d in day_order if d in day_stats.index])
+            day_stats.index = [day_ja.get(d, d) for d in day_stats.index]
+            st.dataframe(day_stats, use_container_width=True)
+        except: pass
+
 
 with tab_island_edit:
     st.markdown('<div class="section-title">島の設定</div>', unsafe_allow_html=True)
