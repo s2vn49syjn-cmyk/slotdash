@@ -2831,11 +2831,22 @@ with tab_label:
 # ════════════════════════════════════════════
 with tab_analysis:
     st.markdown('<div class="section-title">🔬 設定傾向分析</div>', unsafe_allow_html=True)
-    st.markdown('<div style="font-size:0.72rem;color:#7a8aaa;margin-bottom:8px;">記録が50件以上溜まると傾向が見えてきます。</div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-size:0.72rem;color:#7a8aaa;margin-bottom:8px;">記録が溜まるほど精度が上がります。</div>', unsafe_allow_html=True)
 
-    labels_df = load_labels()
+    if "show_analysis" not in st.session_state:
+        st.session_state.show_analysis = False
+    if st.button("🔄 分析データを読み込む", use_container_width=True, key="analysis_load"):
+        load_labels.clear()
+        st.session_state.show_analysis = True
 
-    if labels_df.empty or len(labels_df) < 5:
+    if not st.session_state.show_analysis:
+        st.info("「分析データを読み込む」を押してください")
+    else:
+        labels_df = load_labels()
+
+    if not st.session_state.show_analysis:
+        pass
+    elif labels_df.empty or len(labels_df) < 5:
         st.info(f"まだデータが少なすぎます（{len(labels_df)}件）。設定記録タブで記録を蓄積してください。")
     else:
         high_df = labels_df[labels_df["設定"] == "高設定"]
@@ -2903,6 +2914,180 @@ with tab_analysis:
             day_stats.index = [day_ja.get(d, d) for d in day_stats.index]
             st.dataframe(day_stats, use_container_width=True)
         except: pass
+
+        # ════════════════════════════════════════
+        # 🎯 台ごとの設定確率スコア
+        # ════════════════════════════════════════
+        st.markdown('<div class="section-title">🎯 台ごとの設定確率スコア</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:0.7rem;color:#7a8aaa;margin-bottom:8px;">過去の記録パターンと今日のデータを照合して高設定確率を推定します。データが多いほど精度が上がります。</div>', unsafe_allow_html=True)
+
+        df_main = st.session_state.df_main
+        history, date_labels = load_history()
+
+        if df_main is None:
+            st.info("メインデータが読み込まれていません")
+        else:
+            try:
+                # ── 特徴量の計算 ──
+                def calc_setting_score(num, labels_df, history, df_main):
+                    """台ごとの高設定確率スコアを計算（0-100）"""
+                    score = 50.0  # ベーススコア
+                    reasons = []
+
+                    # ① 過去この台に高設定が入ったときのパターンを学習
+                    台番_records = labels_df[labels_df["台番"].astype(str) == str(num)]
+                    high_records = 台番_records[台番_records["設定"] == "高設定"]
+                    low_records = 台番_records[台番_records["設定"] == "低設定"]
+                    total_records = len(台番_records)
+
+                    if total_records >= 3:
+                        high_rate = len(high_records) / total_records
+                        score += (high_rate - 0.33) * 40  # 平均より高ければプラス
+                        if high_rate >= 0.5:
+                            reasons.append(f"過去高設定率{high_rate*100:.0f}%↑")
+                        elif high_rate <= 0.1:
+                            reasons.append(f"過去高設定率{high_rate*100:.0f}%↓")
+
+                    # ② 前回高設定からの経過日数
+                    if len(high_records) > 0 and "日付" in high_records.columns:
+                        try:
+                            last_high_date = pd.to_datetime(high_records["日付"]).max()
+                            days_since = (pd.Timestamp.now() - last_high_date).days
+                            if days_since <= 3:
+                                score -= 15
+                                reasons.append(f"前回高設定{days_since}日前（近い）")
+                            elif days_since >= 7:
+                                score += 10
+                                reasons.append(f"前回高設定{days_since}日前（遠い）")
+                        except: pass
+
+                    # ③ 直近の凹み日数（凹みが続くほどスコアアップ）
+                    mh = history.get(num, {}) if history else {}
+                    sorted_dates = sorted(mh.keys(), reverse=True)
+                    consecutive_minus = 0
+                    for d in sorted_dates[:7]:
+                        if mh[d]["diff"] < 0:
+                            consecutive_minus += 1
+                        else:
+                            break
+                    if consecutive_minus >= 3:
+                        score += consecutive_minus * 4
+                        reasons.append(f"{consecutive_minus}日連続凹み")
+
+                    # ④ 今日の回転数（高回転ほど据え置き可能性）
+                    row = df_main[df_main["台番"].apply(lambda x: int(x) if not np.isnan(x) else -1) == num]
+                    if not row.empty:
+                        rot = row.iloc[0]["回転数"]
+                        diff = row.iloc[0]["前日差枚"]
+                        if not np.isnan(rot):
+                            if rot >= 8000:
+                                score += 10
+                                reasons.append(f"高回転{int(rot):,}G")
+                            elif rot >= 6000:
+                                score += 5
+                        # 今日の差枚
+                        if not np.isnan(diff):
+                            if diff <= -3000:
+                                score += 8
+                                reasons.append(f"大幅凹み{int(diff):,}")
+                            elif diff >= 3000:
+                                score -= 8
+
+                    # ⑤ 高設定が入ったときの差枚・G数パターンと照合
+                    if len(high_records) >= 3:
+                        try:
+                            avg_high_diff = high_records["差枚"].astype(float).mean()
+                            avg_high_g = high_records["G数"].astype(float).mean()
+                            row = df_main[df_main["台番"].apply(lambda x: int(x) if not np.isnan(x) else -1) == num]
+                            if not row.empty:
+                                cur_diff = row.iloc[0]["前日差枚"]
+                                cur_g = row.iloc[0]["回転数"]
+                                if not np.isnan(cur_g) and avg_high_g > 0:
+                                    g_ratio = cur_g / avg_high_g
+                                    if 0.8 <= g_ratio <= 1.2:
+                                        score += 8
+                                        reasons.append("G数が高設定パターンに近い")
+                        except: pass
+
+                    # ⑥ 曜日傾向
+                    try:
+                        today_dow = pd.Timestamp.now().day_name()
+                        if len(high_records) >= 2:
+                            high_dows = pd.to_datetime(high_records["日付"]).dt.day_name()
+                            if today_dow in high_dows.values:
+                                score += 6
+                                reasons.append("高設定が多い曜日")
+                    except: pass
+
+                    score = float(np.clip(score, 0, 100))
+                    return score, reasons
+
+                # スコア計算対象の台を絞る
+                score_filter = st.multiselect(
+                    "機種で絞り込み（未選択=全台）",
+                    options=sort_machines(df_main["機種名"].dropna().unique().tolist(), df_main),
+                    default=[], key="score_machine_filter",
+                    placeholder="全機種"
+                )
+
+                df_score_target = df_main.copy()
+                if score_filter:
+                    df_score_target = df_score_target[df_score_target["機種名"].isin(score_filter)]
+
+                # スコア計算
+                score_rows = []
+                for _, row in df_score_target.iterrows():
+                    if np.isnan(row["台番"]): continue
+                    num = int(row["台番"])
+                    score, reasons = calc_setting_score(num, labels_df, history, df_main)
+                    score_rows.append({
+                        "台番": num,
+                        "機種": shorten_name(row["機種名"]),
+                        "スコア": round(score, 1),
+                        "前日差枚": row["前日差枚"],
+                        "根拠": " / ".join(reasons) if reasons else "-"
+                    })
+
+                score_df = pd.DataFrame(score_rows).sort_values("スコア", ascending=False)
+
+                # スコアしきい値フィルタ
+                min_score = st.slider("最低スコア", 0, 100, 60, 5, key="score_threshold")
+                high_score_df = score_df[score_df["スコア"] >= min_score].copy()
+
+                st.markdown(f'<div style="font-size:0.8rem;color:#00ffcc;margin-bottom:6px;">スコア{min_score}以上: {len(high_score_df)}台</div>', unsafe_allow_html=True)
+
+                # カード表示（TOP20）
+                for _, r in high_score_df.head(20).iterrows():
+                    sc = r["スコア"]
+                    if sc >= 75: bar_color = "#00ff88"
+                    elif sc >= 60: bar_color = "#ffcc00"
+                    else: bar_color = "#ff8844"
+                    diff_v = r["前日差枚"]
+                    diff_c = "#00ff88" if not np.isnan(diff_v) and diff_v >= 0 else "#ff4444"
+                    bar_w = int(sc)
+                    _sc_html = (
+                        f'<div style="background:#111828;border:1px solid #1e2d45;border-radius:8px;padding:8px;margin-bottom:6px;">'
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                        f'<div><span style="font-size:0.7rem;color:#7a8aaa;">台番</span>'
+                        f'<span style="font-size:0.9rem;font-weight:bold;color:#c8d8f0;margin:0 6px;">{int(r["台番"])}</span>'
+                        f'<span style="font-size:0.75rem;color:#a0b0cc;">{r["機種"]}</span></div>'
+                        f'<div style="font-family:Orbitron,monospace;font-size:1.1rem;font-weight:900;color:{bar_color};">{sc:.0f}</div></div>'
+                        f'<div style="background:#0a0e1a;border-radius:4px;height:6px;margin:6px 0;">'
+                        f'<div style="background:{bar_color};width:{bar_w}%;height:6px;border-radius:4px;"></div></div>'
+                        f'<div style="display:flex;justify-content:space-between;font-size:0.68rem;">'
+                        f'<span style="color:#7a8aaa;">{r["根拠"]}</span>'
+                        f'<span style="color:{diff_c};">{diff_sign(diff_v)}</span></div></div>'
+                    )
+                    st.markdown(_sc_html, unsafe_allow_html=True)
+
+                # 全台テーブル
+                with st.expander("📋 全台スコア一覧"):
+                    disp_score = score_df.copy()
+                    disp_score["前日差枚"] = disp_score["前日差枚"].apply(diff_sign)
+                    st.dataframe(disp_score[["台番","機種","スコア","前日差枚","根拠"]], hide_index=True, use_container_width=True, height=400)
+
+            except Exception as e:
+                st.error(f"スコア計算エラー: {e}")
 
 
 with tab_island_edit:
