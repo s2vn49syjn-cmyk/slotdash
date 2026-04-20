@@ -19,6 +19,7 @@ st.set_page_config(
 )
 
 SPREADSHEET_ID = "1Hak9Q7Q_kjbp22A59pAUJ2twrEy4mdXk1sBfLYlynR8"
+JUGGLER_KEYWORDS = ["ジャグラー", "juggler", "JUGGLER"]
 
 # ─────────────────────────────────────────────
 # スタイル
