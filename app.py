@@ -337,7 +337,6 @@ def process_df(df_raw):
     df["回転数"] = df_raw[回転col].apply(parse_num) if 回転col else np.nan
     df["ボーナス"] = df_raw[ボーナスcol].apply(parse_num) if ボーナスcol else np.nan
     df["週平均"] = df["前日差枚"]
-    df["スコア"] = [calc_score(df.loc[i, "前日差枚"], np.nan, None) for i in df.index]
     df["is_juggler"] = df["機種名"].apply(is_juggler)
     df.index = range(len(df))
     return df, pd.DataFrame()
