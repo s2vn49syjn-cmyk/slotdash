@@ -1470,22 +1470,35 @@ with tab_budget:
 
         with st.expander("＋ 今日の収支を入力", expanded=True):
 
+            # 前回の終了値を朝イチのデフォルトに使う
+            def get_last_end(kind):
+                recs = [r for r in st.session_state.budget_records if r.get("種別") == kind]
+                if not recs: return 0
+                last = sorted(recs, key=lambda r: r["日付"])[-1]
+                return int(last.get("終了", 0))
+
             if genre == "🎰 スロット":
+                last_val = get_last_end("スロット")
                 tc1, tc2 = st.columns(2)
                 with tc1:
-                    t_before = st.number_input("朝イチ 貯メダル（枚）", min_value=0, value=0, step=100, key="t_before")
+                    t_before = st.number_input("朝イチ 貯メダル（枚）", min_value=0, value=last_val, step=100, key="t_before")
+                    if last_val > 0:
+                        st.markdown(f'<div style="font-size:0.65rem;color:#3b82f6;">↑ 前回の貯メダルを自動反映</div>', unsafe_allow_html=True)
                 with tc2:
-                    t_after = st.number_input("帰り際 貯メダル（枚）", min_value=0, value=0, step=100, key="t_after")
+                    t_after = st.number_input("帰り際 貯メダル（枚）", min_value=0, value=last_val, step=100, key="t_after")
                 t_diff = t_after - t_before
                 t_yen = round(t_diff * SLOT_UNIT)
                 unit_label = f"差枚: {t_diff:+,}枚"
 
             elif genre == "🎳 パチンコ":
+                last_val = get_last_end("パチンコ")
                 tc1, tc2 = st.columns(2)
                 with tc1:
-                    t_before = st.number_input("朝イチ 持ち玉（発）", min_value=0, value=0, step=100, key="t_before_p")
+                    t_before = st.number_input("朝イチ 持ち玉（発）", min_value=0, value=last_val, step=100, key="t_before_p")
+                    if last_val > 0:
+                        st.markdown(f'<div style="font-size:0.65rem;color:#3b82f6;">↑ 前回の持ち玉を自動反映</div>', unsafe_allow_html=True)
                 with tc2:
-                    t_after = st.number_input("帰り際 持ち玉（発）", min_value=0, value=0, step=100, key="t_after_p")
+                    t_after = st.number_input("帰り際 持ち玉（発）", min_value=0, value=last_val, step=100, key="t_after_p")
                 t_diff = t_after - t_before
                 t_yen = round(t_diff * PACHI_UNIT)
                 unit_label = f"差玉: {t_diff:+,}発"
