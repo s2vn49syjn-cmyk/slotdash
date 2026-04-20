@@ -301,18 +301,35 @@ def sort_machines(lst, df_ref=None):
 # 攻略サイト機種リスト
 CHONBO_URL = "https://chonborista.com/?s="
 KISHU_LINKS = [
-    "マイジャグラーV","ネオアイムジャグラーEX","ゴーゴージャグラー３",
-    "ウルトラミラクルジャグラー","ミスタージャグラー",
-    "スマスロ北斗の拳 転生の章2","Lスマスロ北斗の拳",
-    "L東京喰種","Lパチスロ かぐや様は告らせたい",
-    "スマスロ 甲鉄城のカバネリ 海門決戦","Lパチスロ革命機ヴァルヴレイヴ2",
-    "スマスロモンキーターンV","スマスロ鉄拳6",
-    "スマスロ ゴッドイーター リザレクション","Lパチスロ炎炎ノ消防隊2",
-    "スマスロ 東京リベンジャーズ","スマスロ化物語",
+    # ジャグラー除外・Lスマスロ北斗→スマスロ北斗・台数順
+    "スマスロ北斗の拳 転生の章2",
+    "L東京喰種",
+    "Lパチスロ かぐや様は告らせたい",
+    "スマスロ 甲鉄城のカバネリ 海門決戦",
+    "Lパチスロ革命機ヴァルヴレイヴ2",
+    "スマスロモンキーターンV",
+    "スマスロ鉄拳6",
+    "スマスロ ゴッドイーター リザレクション",
+    "Lパチスロ炎炎ノ消防隊2",
+    "スマスロ 東京リベンジャーズ",
+    "スマスロ北斗の拳",
+    "スマスロ化物語",
     "スマスロ マギアレコード 魔法少女まどか☆マギカ外伝",
-    "A-SLOT+ ディスクアップ ULTRAREMIX","スマスロ新鬼武者3",
-    "沖ドキ！BLACK","スマスロ 沖ドキ!DUO アンコール",
-    "スマスロ 攻殻機動隊","Lパチスロからくりサーカス",
+    "A-SLOT+ ディスクアップ ULTRAREMIX",
+    "スマスロ新鬼武者3",
+    "沖ドキ！BLACK",
+    "スマスロ 沖ドキ!DUO アンコール",
+    "スマスロ 攻殻機動隊",
+    "Lパチスロからくりサーカス",
+    "スマスロ ハナビ",
+    "L範馬刃牙",
+    "スマスロ ゴブリンスレイヤーⅡ",
+    "Lアズールレーン THE ANIMATION",
+    "L無職転生～異世界行ったら本気だす～",
+    "SHAKE BONUS TRIGGER",
+    "いざ！番長",
+    "スマスロ サンダーV",
+    "クレアの秘宝伝～はじまりの扉と太陽の石～ボーナストリガーver.",
 ]
 
 # ─────────────────────────────────────────────
@@ -1453,10 +1470,7 @@ with tab_all:
 # 💰 収支・攻略
 # ═══════════════════════════════════════════════════════
 with tab_budget:
-    budget_tab, kouryaku_tab = st.tabs(["💰 収支記録", "📖 攻略サイト"])
-
-    # ── 収支記録 ──
-    with budget_tab:
+    if True:
         st.markdown('<div class="sec-title">💰 収支記録</div>', unsafe_allow_html=True)
 
         # 交換率定数
@@ -1640,20 +1654,20 @@ with tab_budget:
                     st.rerun()
 
     # ── 攻略サイト ──
-    with kouryaku_tab:
-        st.markdown('<div class="sec-title">📖 攻略サイト（チョンボリスタ）</div>', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:0.7rem;color:#94a3b8;margin-bottom:10px;">機種名をタップするとチョンボリスタで検索します</div>', unsafe_allow_html=True)
+with tab_kouryaku:
+    st.markdown('<div class="sec-title">📖 攻略サイト（チョンボリスタ）</div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-size:0.7rem;color:#94a3b8;margin-bottom:10px;">機種名をタップするとチョンボリスタで検索します</div>', unsafe_allow_html=True)
 
-        search_kw = st.text_input("機種名で検索", placeholder="例: マイジャグ", key="kouryaku_search")
+    search_kw = st.text_input("機種名で検索", placeholder="例: マイジャグ", key="kouryaku_search")
 
-        display_kishu = [k for k in KISHU_LINKS if search_kw.lower() in k.lower()] if search_kw else KISHU_LINKS
+    display_kishu = [k for k in KISHU_LINKS if search_kw.lower() in k.lower()] if search_kw else KISHU_LINKS
 
-        for kishu in display_kishu:
-            import urllib.parse
-            url = CHONBO_URL + urllib.parse.quote(kishu)
-            short = shorten_name(kishu)
-            st.markdown(
-                f'<a href="{url}" target="_blank" class="kishu-link">'
-                f'<span>{kishu}</span><span style="color:#3b82f6;font-size:0.8rem;">開く →</span></a>',
-                unsafe_allow_html=True
-            )
+    for kishu in display_kishu:
+        import urllib.parse
+        url = CHONBO_URL + urllib.parse.quote(kishu)
+        short = shorten_name(kishu)
+        st.markdown(
+            f'<a href="{url}" target="_blank" class="kishu-link">'
+            f'<span>{kishu}</span><span style="color:#3b82f6;font-size:0.8rem;">開く →</span></a>',
+            unsafe_allow_html=True
+        )
