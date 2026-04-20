@@ -1066,8 +1066,10 @@ tab_dash, tab_island, tab_all, tab_budget = st.tabs([
 # 🏠 ダッシュボード
 # ═══════════════════════════════════════════════════════
 with tab_dash:
-    if df is None:
-        st.info("データ読み込み中...")
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty or "前日差枚" not in df.columns:
+        st.info("データ読み込み中... しばらくお待ちください。")
+        if df is not None and isinstance(df, pd.DataFrame):
+            st.write(f"df shape: {df.shape}, columns: {list(df.columns)[:5]}")
     else:
         valid = df["前日差枚"].dropna()
         plus_n = (valid > 0).sum()
@@ -1347,7 +1349,7 @@ with tab_dash:
 # 🗺 島図
 # ═══════════════════════════════════════════════════════
 with tab_island:
-    if df is None:
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
         st.info("データ読み込み中...")
     else:
         # 凡例
@@ -1402,7 +1404,7 @@ with tab_island:
 # 📋 全台一覧
 # ═══════════════════════════════════════════════════════
 with tab_all:
-    if df is None:
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
         st.info("データ読み込み中...")
     else:
         # ソート
