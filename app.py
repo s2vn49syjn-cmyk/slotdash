@@ -967,9 +967,9 @@ def make_pdf_island_map(df, target_machines=None, diff_override=None):
 
     shapes = []
     annotations = []
-    BW = 48  # バッジ幅（300dpi対応）
-    BH = 28  # バッジ高さ（300dpi対応）
-    OFFSET_Y = 36  # 台番の上にずらすピクセル数（300dpi対応）
+    BW = 30  # バッジ幅
+    BH = 18  # バッジ高さ
+    OFFSET_Y = 22  # 台番の上にずらすピクセル数
 
     for mno, (rx, ry) in PDF_POSITIONS.items():
         px = rx * PDF_IMG_W
@@ -1018,7 +1018,7 @@ def make_pdf_island_map(df, target_machines=None, diff_override=None):
             x=px, y=by,
             text=f"<b>{diff_text}</b>",
             showarrow=False,
-            font=dict(size=12, color=text_c),
+            font=dict(size=7, color=text_c),
             xanchor="center", yanchor="middle"
         ))
 
