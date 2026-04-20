@@ -1036,12 +1036,24 @@ st.markdown('''<div class="app-header">
 </div>''', unsafe_allow_html=True)
 
 # データ読み込み
-df, today_date = load_today()
-history, date_labels = load_history()
+try:
+    df, today_date = load_today()
+except Exception as _e:
+    st.error(f"データ読み込みエラー: {_e}")
+    df, today_date = None, None
+
+try:
+    history, date_labels = load_history()
+except Exception as _e2:
+    st.warning(f"履歴読み込みエラー: {_e2}")
+    history, date_labels = {}, []
+
 sorted_dates = sorted(date_labels, reverse=True) if date_labels else []
 
 if df is not None:
     st.markdown(f'<div style="font-size:0.68rem;color:#475569;margin-bottom:8px;">最終データ: {today_date} | 全{len(df)}台</div>', unsafe_allow_html=True)
+else:
+    st.warning("データが読み込めていません。Google Sheetsの接続を確認してください。")
 
 # ─────────────────────────────────────────────
 # タブ
