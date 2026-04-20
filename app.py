@@ -1459,85 +1459,139 @@ with tab_budget:
     with budget_tab:
         st.markdown('<div class="sec-title">💰 収支記録</div>', unsafe_allow_html=True)
 
-        # 入力フォーム
-        with st.expander("＋ 新規記録を追加", expanded=False):
-            bc1, bc2 = st.columns(2)
-            with bc1:
-                b_date = st.date_input("日付", value=datetime.now().date(), key="b_date")
-                b_num = st.number_input("台番", min_value=800, max_value=1304, value=1000, step=1, key="b_num")
-                b_machine = st.selectbox("機種名",
-                    sort_machines(df["機種名"].dropna().unique().tolist(), df) if (df is not None and isinstance(df, pd.DataFrame) and not df.empty) else [],
-                    key="b_machine")
-            with bc2:
-                b_invest = st.number_input("投資（円）", min_value=0, value=5000, step=1000, key="b_invest")
-                b_collect = st.number_input("回収（円）", min_value=0, value=0, step=1000, key="b_collect")
-                b_memo = st.text_input("メモ", placeholder="例: 朝イチ据え置き狙い", key="b_memo")
+        EXCHANGE_RATE = 52   # 52枚=1000円
+        MEDAL_VALUE = 1000 / EXCHANGE_RATE  # ≒19.23円/枚
 
-            b_diff = b_collect - b_invest
-            b_color = "#22c55e" if b_diff >= 0 else "#ef4444"
-            st.markdown(f'<div style="font-size:0.9rem;font-weight:700;color:{b_color};">収支: {b_diff:+,}円</div>', unsafe_allow_html=True)
+        # ── 今日の収支を計算 ──
+        st.markdown('<div style="font-size:0.8rem;color:#06b6d4;margin-bottom:6px;">📊 今日の収支を計算</div>', unsafe_allow_html=True)
 
-            if st.button("💾 記録を追加", use_container_width=True, key="b_add"):
-                st.session_state.budget_records.append({
-                    "日付": str(b_date),
-                    "台番": b_num,
-                    "機種名": b_machine,
-                    "投資": b_invest,
-                    "回収": b_collect,
-                    "収支": b_diff,
-                    "メモ": b_memo,
-                })
-                st.success("✅ 記録を追加しました！")
-                st.rerun()
+        with st.expander("貯メダルから計算", expanded=True):
+            tc1, tc2 = st.columns(2)
+            with tc1:
+                t_before = st.number_input("朝イチ 貯メダル（枚）", min_value=0, value=0, step=100, key="t_before")
+            with tc2:
+                t_after = st.number_input("帰り際 貯メダル（枚）", min_value=0, value=0, step=100, key="t_after")
 
-        # 記録一覧
+            t_diff = t_after - t_before
+            t_yen = round(t_diff / EXCHANGE_RATE * 1000)
+            tc = "#22c55e" if t_diff >= 0 else "#ef4444"
+
+            st.markdown(f'''<div style="background:#141820;border:1px solid #252d3d;border-radius:10px;padding:14px;margin:8px 0;">
+              <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;text-align:center;">
+                <div>
+                  <div style="font-size:0.65rem;color:#475569;margin-bottom:2px;">差枚</div>
+                  <div style="font-family:Rajdhani,sans-serif;font-size:1.6rem;font-weight:700;color:{tc};">{t_diff:+,}枚</div>
+                </div>
+                <div>
+                  <div style="font-size:0.65rem;color:#475569;margin-bottom:2px;">収支（交換後）</div>
+                  <div style="font-family:Rajdhani,sans-serif;font-size:1.6rem;font-weight:700;color:{tc};">{t_yen:+,}円</div>
+                </div>
+              </div>
+              <div style="font-size:0.65rem;color:#475569;text-align:center;margin-top:6px;">52枚=1000円換算</div>
+            </div>''', unsafe_allow_html=True)
+
+            # 記録として保存
+            b_date2 = st.date_input("日付", value=datetime.now().date(), key="b_date2")
+            b_memo2 = st.text_input("メモ（任意）", placeholder="例: マイジャグ947番台", key="b_memo2")
+
+            if st.button("💾 今日の収支を記録", use_container_width=True, key="b_add2"):
+                if t_before == 0 and t_after == 0:
+                    st.warning("貯メダル数を入力してください")
+                else:
+                    st.session_state.budget_records.append({
+                        "日付": str(b_date2),
+                        "朝メダル": t_before,
+                        "夜メダル": t_after,
+                        "差枚": t_diff,
+                        "収支(円)": t_yen,
+                        "メモ": b_memo2,
+                    })
+                    st.success(f"✅ {t_diff:+,}枚 / {t_yen:+,}円 を記録しました！")
+                    st.rerun()
+
+        st.markdown("<hr>", unsafe_allow_html=True)
+
+        # ── 記録一覧 ──
         if not st.session_state.budget_records:
             st.info("まだ記録がありません")
         else:
             brecs = pd.DataFrame(st.session_state.budget_records)
-            total = brecs["収支"].sum()
-            tot_color = "#22c55e" if total >= 0 else "#ef4444"
-            invest_total = brecs["投資"].sum()
-            collect_total = brecs["回収"].sum()
+            brecs["日付"] = pd.to_datetime(brecs["日付"])
 
-            # サマリ
-            st.markdown(f'''<div class="sum-cards" style="margin-bottom:12px;">
+            # 総サマリ
+            total_yen = brecs["収支(円)"].sum()
+            total_medal = brecs["差枚"].sum()
+            win_days = (brecs["収支(円)"] > 0).sum()
+            lose_days = (brecs["収支(円)"] <= 0).sum()
+            sc = "#22c55e" if total_yen >= 0 else "#ef4444"
+
+            st.markdown(f'''<div class="sum-cards" style="margin-bottom:10px;">
               <div class="sum-card">
-                <div class="sum-val" style="color:{tot_color};">{total:+,}</div>
+                <div class="sum-val" style="color:{sc};">{total_yen:+,}</div>
                 <div class="sum-label">総収支（円）</div>
               </div>
               <div class="sum-card">
-                <div class="sum-val" style="color:#ef4444;">{invest_total:,}</div>
-                <div class="sum-label">総投資</div>
+                <div class="sum-val" style="color:{sc};">{total_medal:+,}</div>
+                <div class="sum-label">総差枚（枚）</div>
               </div>
               <div class="sum-card">
-                <div class="sum-val" style="color:#22c55e;">{collect_total:,}</div>
-                <div class="sum-label">総回収</div>
+                <div class="sum-val" style="color:#94a3b8;">{win_days}勝{lose_days}敗</div>
+                <div class="sum-label">勝敗</div>
               </div>
             </div>''', unsafe_allow_html=True)
 
-            # 日別サマリ
-            st.markdown('<div style="font-size:0.72rem;color:#94a3b8;margin-bottom:6px;">日別収支</div>', unsafe_allow_html=True)
-            daily = brecs.groupby("日付")["収支"].sum().reset_index().sort_values("日付", ascending=False)
-            for _, dr in daily.iterrows():
-                c = "#22c55e" if dr["収支"] >= 0 else "#ef4444"
-                st.markdown(f'<div style="display:flex;justify-content:space-between;padding:6px 10px;background:#141820;border-radius:6px;margin-bottom:4px;font-size:0.8rem;"><span style="color:#94a3b8;">{dr["日付"]}</span><span style="color:{c};font-weight:700;">{dr["収支"]:+,}円</span></div>', unsafe_allow_html=True)
+            # 月別集計
+            st.markdown('<div style="font-size:0.75rem;color:#06b6d4;margin:10px 0 6px;">📅 月別収支</div>', unsafe_allow_html=True)
+            brecs["月"] = brecs["日付"].dt.strftime("%Y-%m")
+            monthly = brecs.groupby("月").agg(
+                収支合計=("収支(円)", "sum"),
+                差枚合計=("差枚", "sum"),
+                回数=("日付", "count"),
+            ).reset_index().sort_values("月", ascending=False)
 
-            # 全記録テーブル
-            with st.expander("全記録を見る"):
-                disp_b = brecs.copy()
-                disp_b["収支"] = disp_b["収支"].apply(lambda x: f"{x:+,}円")
-                disp_b["投資"] = disp_b["投資"].apply(lambda x: f"{x:,}円")
-                disp_b["回収"] = disp_b["回収"].apply(lambda x: f"{x:,}円")
-                st.dataframe(disp_b[["日付","台番","機種名","投資","回収","収支","メモ"]], hide_index=True, use_container_width=True)
+            for _, mr in monthly.iterrows():
+                mc = "#22c55e" if mr["収支合計"] >= 0 else "#ef4444"
+                st.markdown(
+                    f'<div style="background:#141820;border:1px solid #252d3d;border-radius:8px;padding:10px;margin-bottom:6px;">' +
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+                    f'<span style="font-family:Rajdhani,sans-serif;font-size:1rem;font-weight:700;color:#e2e8f0;">{mr["月"]}</span>' +
+                    f'<span style="font-family:Rajdhani,sans-serif;font-size:1.1rem;font-weight:700;color:{mc};">{int(mr["収支合計"]):+,}円</span></div>' +
+                    f'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;text-align:center;">' +
+                    f'<div><div style="font-size:0.6rem;color:#475569;">差枚</div><div style="font-size:0.78rem;color:{mc};">{int(mr["差枚合計"]):+,}枚</div></div>' +
+                    f'<div><div style="font-size:0.6rem;color:#475569;">回数</div><div style="font-size:0.78rem;color:#94a3b8;">{int(mr["回数"])}回</div></div>' +
+                    f'<div><div style="font-size:0.6rem;color:#475569;">平均</div><div style="font-size:0.78rem;color:{mc};">{int(mr["収支合計"]/mr["回数"]):+,}円</div></div>' +
+                    f'</div></div>',
+                    unsafe_allow_html=True
+                )
 
-            # CSV出力
+            # 日別明細
+            st.markdown('<div style="font-size:0.75rem;color:#06b6d4;margin:10px 0 6px;">📋 日別明細</div>', unsafe_allow_html=True)
+            for _, dr in brecs.sort_values("日付", ascending=False).iterrows():
+                dc = "#22c55e" if dr["収支(円)"] >= 0 else "#ef4444"
+                memo = f' / {dr["メモ"]}' if dr.get("メモ") else ""
+                st.markdown(
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#141820;border-radius:6px;margin-bottom:4px;">' +
+                    f'<div><div style="font-size:0.8rem;color:#94a3b8;">{dr["日付"].strftime("%Y-%m-%d")}</div>' +
+                    f'<div style="font-size:0.65rem;color:#475569;">{int(dr["朝メダル"]):,}枚→{int(dr["夜メダル"]):,}枚{memo}</div></div>' +
+                    f'<div style="text-align:right;">' +
+                    f'<div style="font-family:Rajdhani,sans-serif;font-size:1rem;font-weight:700;color:{dc};">{int(dr["収支(円)"]):+,}円</div>' +
+                    f'<div style="font-size:0.7rem;color:{dc};">{int(dr["差枚"]):+,}枚</div></div></div>',
+                    unsafe_allow_html=True
+                )
+                # 削除ボタン
+                if st.button("✕", key=f"del_{_}", use_container_width=False):
+                    st.session_state.budget_records.pop(_)
+                    st.rerun()
+
+            # CSV出力・クリア
             csv = brecs.to_csv(index=False, encoding="utf-8-sig")
-            st.download_button("📥 CSVダウンロード", csv, "収支記録.csv", "text/csv", use_container_width=True)
-
-            if st.button("🗑 全記録をクリア", key="b_clear"):
-                st.session_state.budget_records = []
-                st.rerun()
+            sc1, sc2 = st.columns(2)
+            with sc1:
+                st.download_button("📥 CSVダウンロード", csv, "収支記録.csv", "text/csv", use_container_width=True)
+            with sc2:
+                if st.button("🗑 全記録クリア", key="b_clear", use_container_width=True):
+                    st.session_state.budget_records = []
+                    st.rerun()
 
     # ── 攻略サイト ──
     with kouryaku_tab:
