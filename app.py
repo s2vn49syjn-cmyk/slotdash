@@ -331,7 +331,7 @@ def process_df(df_raw):
     差枚col = fc("差枚", "前日差枚")
     回転col = fc("回転数", "回転", "G数")
     ボーナスcol = fc("ボーナス", "bonus")
-    if not 台番col or not 機種col: return None, None
+    if not 台番col or not 機種col: return None
     df["台番"] = df_raw[台番col].apply(parse_num)
     df["機種名"] = df_raw[機種col].astype(str).str.strip()
     df["前日差枚"] = df_raw[差枚col].apply(parse_num) if 差枚col else np.nan
@@ -340,7 +340,7 @@ def process_df(df_raw):
     df["週平均"] = df["前日差枚"]
     df["is_juggler"] = df["機種名"].apply(is_juggler)
     df.index = range(len(df))
-    return df, pd.DataFrame()
+    return df
 
 @st.cache_data(ttl=300)
 def load_today():
@@ -356,7 +356,9 @@ def load_today():
         data = ws.get_all_records()
         if not data: return None, None
         df = pd.DataFrame(data)
-        return process_df(df), ws.title
+        result = process_df(df)
+        if result is None: return None, None
+        return result, ws.title
     except Exception as e:
         st.error(f"データ読み込みエラー: {e}")
         return None, None
@@ -1464,7 +1466,7 @@ with tab_budget:
                 b_date = st.date_input("日付", value=datetime.now().date(), key="b_date")
                 b_num = st.number_input("台番", min_value=800, max_value=1304, value=1000, step=1, key="b_num")
                 b_machine = st.selectbox("機種名",
-                    sort_machines(df["機種名"].dropna().unique().tolist(), df) if df is not None else [],
+                    sort_machines(df["機種名"].dropna().unique().tolist(), df) if (df is not None and isinstance(df, pd.DataFrame) and not df.empty) else [],
                     key="b_machine")
             with bc2:
                 b_invest = st.number_input("投資（円）", min_value=0, value=5000, step=1000, key="b_invest")
