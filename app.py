@@ -226,6 +226,16 @@ def diff_sign(val):
 def is_juggler(name):
     return any(k in str(name) for k in JUGGLER_KEYWORDS)
 
+def parse_num(val):
+    """文字列や数値を数値に変換"""
+    try:
+        if val is None or val == "": return np.nan
+        s = str(val).replace(",", "").replace("＋", "+").replace("－", "-").replace("−", "-").strip()
+        if s in ["-", "−", "ー", "?"]: return np.nan
+        return float(s)
+    except:
+        return np.nan
+
 def diff_class(val):
     if np.isnan(val): return "rec-diff-plus"
     return "rec-diff-plus" if val >= 0 else "rec-diff-minus"
