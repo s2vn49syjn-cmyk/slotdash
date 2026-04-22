@@ -357,7 +357,7 @@ def generate_island_image(diff_map_tuple, date_key=""):
     draw = ImageDraw.Draw(bg)
 
     # フォント
-    FONT_SIZE = 18
+    FONT_SIZE = 22
     try:
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", FONT_SIZE)
     except:
@@ -379,9 +379,9 @@ def generate_island_image(diff_map_tuple, date_key=""):
         if diff < 0 or diff >= 1000: return (255, 255, 255)
         return (40, 40, 40)
 
-    OFFSET_Y = 22
-    BW = 30
-    BH = 18
+    OFFSET_Y = 32
+    BW = 52
+    BH = 26
 
     # 全バッジを一括描画（alpha_compositeなし・高速）
     for num, (rx, ry) in PDF_POSITIONS.items():
@@ -393,9 +393,12 @@ def generate_island_image(diff_map_tuple, date_key=""):
         py = int(ry * H) - OFFSET_Y
 
         color = get_color(diff)
+        # 角丸風に見せるため外枠も描画
         x0, y0 = px - BW//2, py - BH//2
         x1, y1 = px + BW//2, py + BH//2
         draw.rectangle([x0, y0, x1, y1], fill=color)
+        # 白い細枠
+        draw.rectangle([x0, y0, x1, y1], outline=(255,255,255), width=1)
 
         text = f"+{int(diff):,}" if diff > 0 else ("0" if diff == 0 else f"{int(diff):,}")
         text_color = get_text_color(diff)
