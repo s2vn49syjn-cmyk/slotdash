@@ -335,6 +335,107 @@ KISHU_LINKS = [
 # ─────────────────────────────────────────────
 # データ読み込み
 # ─────────────────────────────────────────────
+def generate_island_image(df, diff_override=None):
+    """PILでPDF背景に差枚をオーバーレイした画像を生成"""
+    from PIL import Image, ImageDraw, ImageFont
+    import io, base64
+
+    # PDF背景画像をbase64からデコード
+    img_data = base64.b64decode(PDF_BG_IMAGE)
+    bg = Image.open(io.BytesIO(img_data)).convert("RGBA")
+    W, H = bg.size
+
+    draw = ImageDraw.Draw(bg)
+
+    # 差枚マップ
+    diff_map = {}
+    if diff_override:
+        diff_map = diff_override
+    else:
+        for _, row in df.iterrows():
+            if not np.isnan(row["台番"]):
+                diff_map[int(row["台番"])] = row["前日差枚"]
+
+    # フォントサイズ
+    FONT_SIZE = 18
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", FONT_SIZE)
+        font_sm = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12)
+    except:
+        font = ImageFont.load_default()
+        font_sm = font
+
+    # 色マップ
+    COLOR_MAP = {
+        "big_plus": (200, 0, 0, 200),      # +4000以上 濃赤
+        "plus3": (180, 50, 180, 200),       # +3000〜
+        "plus2": (80, 160, 60, 200),        # +2000〜
+        "plus1": (180, 180, 0, 200),        # +1000〜
+        "plus": (100, 180, 220, 200),       # +1〜
+        "zero": (200, 200, 200, 160),       # 0
+        "minus": (255, 60, 60, 200),        # マイナス
+    }
+
+    def get_color(diff):
+        if np.isnan(diff): return None
+        if diff >= 4000: return COLOR_MAP["big_plus"]
+        if diff >= 3000: return COLOR_MAP["plus3"]
+        if diff >= 2000: return COLOR_MAP["plus2"]
+        if diff >= 1000: return COLOR_MAP["plus1"]
+        if diff > 0: return COLOR_MAP["plus"]
+        if diff == 0: return COLOR_MAP["zero"]
+        return COLOR_MAP["minus"]
+
+    OFFSET_Y = 22
+    BW = 30
+    BH = 18
+
+    for num, (rx, ry) in PDF_POSITIONS.items():
+        px = int(rx * W)
+        py = int(ry * H)
+        diff = diff_map.get(num, np.nan)
+
+        if np.isnan(diff): continue
+
+        by = py - OFFSET_Y
+        color = get_color(diff)
+        if color is None: continue
+
+        # バッジ背景
+        x0, y0 = px - BW//2, by - BH//2
+        x1, y1 = px + BW//2, by + BH//2
+        overlay = Image.new("RGBA", bg.size, (0,0,0,0))
+        odraw = ImageDraw.Draw(overlay)
+        odraw.rectangle([x0, y0, x1, y1], fill=color)
+        bg = Image.alpha_composite(bg, overlay)
+        draw = ImageDraw.Draw(bg)
+
+        # テキスト
+        if diff > 0:
+            text = f"+{int(diff):,}"
+        elif diff == 0:
+            text = "0"
+        else:
+            text = f"{int(diff):,}"
+
+        text_color = (255, 255, 255, 255) if diff < 0 or diff >= 1000 else (40, 40, 40, 255)
+        try:
+            bbox = draw.textbbox((0,0), text, font=font)
+            tw = bbox[2] - bbox[0]
+            th = bbox[3] - bbox[1]
+        except:
+            tw, th = FONT_SIZE * len(text) // 2, FONT_SIZE
+        draw.text((px - tw//2, by - th//2), text, fill=text_color, font=font)
+
+    # RGBAをRGBに変換
+    bg_rgb = bg.convert("RGB")
+
+    # PNG形式でバイト列に変換
+    buf = io.BytesIO()
+    bg_rgb.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
 def process_df(df_raw):
     df = pd.DataFrame()
     cols = {c.strip(): c for c in df_raw.columns}
@@ -1417,6 +1518,25 @@ with tab_island:
                 }
             })
         st.markdown('<div style="font-size:0.65rem;color:#475569;">📸 右上のカメラアイコンでPNG保存 / ピンチでズーム可</div>', unsafe_allow_html=True)
+
+        # ── 高画質ダウンロード ──
+        st.markdown('<div style="font-size:0.75rem;color:#06b6d4;margin:10px 0 6px;">📥 画像ダウンロード</div>', unsafe_allow_html=True)
+        if st.button("🖼 島図をPNG画像として生成", use_container_width=True, key="dl_island"):
+            with st.spinner("画像を生成中..."):
+                try:
+                    img_bytes = generate_island_image(df, diff_override=diff_override)
+                    fname = f"島図_{today_date}_{st.session_state.ip}.png"
+                    st.download_button(
+                        label=f"📥 {fname} をダウンロード",
+                        data=img_bytes,
+                        file_name=fname,
+                        mime="image/png",
+                        use_container_width=True,
+                        key="dl_island_btn"
+                    )
+                    st.success("✅ 画像生成完了！ダウンロードボタンを押してください")
+                except Exception as e:
+                    st.error(f"画像生成エラー: {e}")
 
 
 # ═══════════════════════════════════════════════════════
