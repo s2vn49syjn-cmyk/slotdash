@@ -335,104 +335,81 @@ KISHU_LINKS = [
 # ─────────────────────────────────────────────
 # データ読み込み
 # ─────────────────────────────────────────────
-def generate_island_image(df, diff_override=None):
-    """PILでPDF背景に差枚をオーバーレイした画像を生成"""
-    from PIL import Image, ImageDraw, ImageFont
+# 背景画像をキャッシュ（デコードは一度だけ）
+@st.cache_data
+def _load_bg_image():
+    from PIL import Image
     import io, base64
-
-    # PDF背景画像をbase64からデコード
     img_data = base64.b64decode(PDF_BG_IMAGE)
-    bg = Image.open(io.BytesIO(img_data)).convert("RGBA")
-    W, H = bg.size
+    return Image.open(io.BytesIO(img_data)).convert("RGB")
 
+@st.cache_data(show_spinner=False)
+def generate_island_image(diff_map_tuple, date_key=""):
+    """PILで高速に差枚オーバーレイ画像を生成（キャッシュ付き）"""
+    from PIL import Image, ImageDraw, ImageFont
+    import io
+
+    diff_map = dict(diff_map_tuple)
+
+    # 背景をコピー（キャッシュから）
+    bg = _load_bg_image().copy()
+    W, H = bg.size
     draw = ImageDraw.Draw(bg)
 
-    # 差枚マップ
-    diff_map = {}
-    if diff_override:
-        diff_map = diff_override
-    else:
-        for _, row in df.iterrows():
-            if not np.isnan(row["台番"]):
-                diff_map[int(row["台番"])] = row["前日差枚"]
-
-    # フォントサイズ
+    # フォント
     FONT_SIZE = 18
     try:
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", FONT_SIZE)
-        font_sm = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12)
     except:
         font = ImageFont.load_default()
-        font_sm = font
 
-    # 色マップ
-    COLOR_MAP = {
-        "big_plus": (200, 0, 0, 200),      # +4000以上 濃赤
-        "plus3": (180, 50, 180, 200),       # +3000〜
-        "plus2": (80, 160, 60, 200),        # +2000〜
-        "plus1": (180, 180, 0, 200),        # +1000〜
-        "plus": (100, 180, 220, 200),       # +1〜
-        "zero": (200, 200, 200, 160),       # 0
-        "minus": (255, 60, 60, 200),        # マイナス
-    }
-
+    # 色定義
     def get_color(diff):
-        if np.isnan(diff): return None
-        if diff >= 4000: return COLOR_MAP["big_plus"]
-        if diff >= 3000: return COLOR_MAP["plus3"]
-        if diff >= 2000: return COLOR_MAP["plus2"]
-        if diff >= 1000: return COLOR_MAP["plus1"]
-        if diff > 0: return COLOR_MAP["plus"]
-        if diff == 0: return COLOR_MAP["zero"]
-        return COLOR_MAP["minus"]
+        if diff >= 10000: return (17, 17, 17)
+        if diff >= 5000:  return (139, 0, 0)
+        if diff >= 4000:  return (204, 0, 0)
+        if diff >= 3000:  return (180, 50, 180)
+        if diff >= 2000:  return (80, 160, 60)
+        if diff >= 1000:  return (180, 180, 0)
+        if diff > 0:      return (100, 180, 220)
+        if diff == 0:     return (200, 200, 200)
+        return (220, 60, 60)
+
+    def get_text_color(diff):
+        if diff < 0 or diff >= 1000: return (255, 255, 255)
+        return (40, 40, 40)
 
     OFFSET_Y = 22
     BW = 30
     BH = 18
 
+    # 全バッジを一括描画（alpha_compositeなし・高速）
     for num, (rx, ry) in PDF_POSITIONS.items():
+        diff = diff_map.get(num)
+        if diff is None or (isinstance(diff, float) and np.isnan(diff)):
+            continue
+
         px = int(rx * W)
-        py = int(ry * H)
-        diff = diff_map.get(num, np.nan)
+        py = int(ry * H) - OFFSET_Y
 
-        if np.isnan(diff): continue
-
-        by = py - OFFSET_Y
         color = get_color(diff)
-        if color is None: continue
+        x0, y0 = px - BW//2, py - BH//2
+        x1, y1 = px + BW//2, py + BH//2
+        draw.rectangle([x0, y0, x1, y1], fill=color)
 
-        # バッジ背景
-        x0, y0 = px - BW//2, by - BH//2
-        x1, y1 = px + BW//2, by + BH//2
-        overlay = Image.new("RGBA", bg.size, (0,0,0,0))
-        odraw = ImageDraw.Draw(overlay)
-        odraw.rectangle([x0, y0, x1, y1], fill=color)
-        bg = Image.alpha_composite(bg, overlay)
-        draw = ImageDraw.Draw(bg)
+        text = f"+{int(diff):,}" if diff > 0 else ("0" if diff == 0 else f"{int(diff):,}")
+        text_color = get_text_color(diff)
 
-        # テキスト
-        if diff > 0:
-            text = f"+{int(diff):,}"
-        elif diff == 0:
-            text = "0"
-        else:
-            text = f"{int(diff):,}"
-
-        text_color = (255, 255, 255, 255) if diff < 0 or diff >= 1000 else (40, 40, 40, 255)
         try:
-            bbox = draw.textbbox((0,0), text, font=font)
+            bbox = draw.textbbox((0, 0), text, font=font)
             tw = bbox[2] - bbox[0]
             th = bbox[3] - bbox[1]
         except:
-            tw, th = FONT_SIZE * len(text) // 2, FONT_SIZE
-        draw.text((px - tw//2, by - th//2), text, fill=text_color, font=font)
+            tw, th = len(text) * 9, FONT_SIZE
+        draw.text((px - tw//2, py - th//2), text, fill=text_color, font=font)
 
-    # RGBAをRGBに変換
-    bg_rgb = bg.convert("RGB")
-
-    # PNG形式でバイト列に変換
     buf = io.BytesIO()
-    bg_rgb.save(buf, format="PNG", optimize=True)
+    bg.save(buf, format="PNG", optimize=True)
     return buf.getvalue()
 
 
@@ -1524,7 +1501,13 @@ with tab_island:
         if st.button("🖼 島図をPNG画像として生成", use_container_width=True, key="dl_island"):
             with st.spinner("画像を生成中..."):
                 try:
-                    img_bytes = generate_island_image(df, diff_override=diff_override)
+                    # diff_mapをタプルに変換してキャッシュキーに使う
+                    if diff_override:
+                        dm = diff_override
+                    else:
+                        dm = {int(r["台番"]): r["前日差枚"] for _, r in df.iterrows() if not np.isnan(r["台番"])}
+                    dm_tuple = tuple(sorted(dm.items()))
+                    img_bytes = generate_island_image(dm_tuple, date_key=f"{today_date}_{st.session_state.ip}")
                     fname = f"島図_{today_date}_{st.session_state.ip}.png"
                     st.download_button(
                         label=f"📥 {fname} をダウンロード",
