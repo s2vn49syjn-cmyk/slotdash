@@ -373,11 +373,16 @@ def generate_island_image(diff_map_tuple, date_key=""):
         if diff >= 1000:  return (180, 180, 0)
         if diff > 0:      return (100, 180, 220)
         if diff == 0:     return (200, 200, 200)
-        return (220, 60, 60)
+        return (255, 255, 255)  # マイナスは白背景
 
     def get_text_color(diff):
-        if diff < 0 or diff >= 1000: return (255, 255, 255)
+        if diff < 0: return (220, 0, 0)       # マイナスは赤文字
+        if diff >= 1000: return (255, 255, 255)
         return (40, 40, 40)
+
+    def get_outline_color(diff):
+        if diff < 0: return (220, 0, 0)  # マイナスは赤枠
+        return (255, 255, 255)
 
     OFFSET_Y = 32
     BW = 52
@@ -397,8 +402,9 @@ def generate_island_image(diff_map_tuple, date_key=""):
         x0, y0 = px - BW//2, py - BH//2
         x1, y1 = px + BW//2, py + BH//2
         draw.rectangle([x0, y0, x1, y1], fill=color)
-        # 白い細枠
-        draw.rectangle([x0, y0, x1, y1], outline=(255,255,255), width=1)
+        # 枠線（マイナスは赤枠）
+        outline_c = get_outline_color(diff)
+        draw.rectangle([x0, y0, x1, y1], outline=outline_c, width=2)
 
         text = f"+{int(diff):,}" if diff > 0 else ("0" if diff == 0 else f"{int(diff):,}")
         text_color = get_text_color(diff)
@@ -1452,19 +1458,6 @@ with tab_island:
     if df is None or not isinstance(df, pd.DataFrame) or df.empty:
         st.info("データ読み込み中...")
     else:
-        # 凡例
-        st.markdown("""<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;font-size:0.65rem;">
-          <span style="background:#fff;color:#CC0000;border:1px solid #CC0000;padding:1px 5px;border-radius:3px;">-500↓</span>
-          <span style="background:#f0f0f0;color:#999;border:1px solid #ccc;padding:1px 5px;border-radius:3px;">0</span>
-          <span style="background:#88CCEE;color:#333;padding:1px 5px;border-radius:3px;">+1〜</span>
-          <span style="background:#DDDD00;color:#333;padding:1px 5px;border-radius:3px;">+1000〜</span>
-          <span style="background:#66BB44;color:#fff;padding:1px 5px;border-radius:3px;">+2000〜</span>
-          <span style="background:#CC44CC;color:#fff;padding:1px 5px;border-radius:3px;">+3000〜</span>
-          <span style="background:#CC0000;color:#fff;padding:1px 5px;border-radius:3px;">+4000〜</span>
-          <span style="background:#8B0000;color:#fff;padding:1px 5px;border-radius:3px;">+5000〜</span>
-          <span style="background:#111;color:#FF4444;padding:1px 5px;border-radius:3px;">+10000↑</span>
-        </div>""", unsafe_allow_html=True)
-
         # 期間切替
         pc = st.columns(3)
         if "ip" not in st.session_state: st.session_state.ip = "前日"
@@ -1474,9 +1467,9 @@ with tab_island:
             if st.button("直近3日", use_container_width=True, key="ip3"): st.session_state.ip = "直近3日"
         with pc[2]:
             if st.button("直近7日", use_container_width=True, key="ip7"): st.session_state.ip = "直近7日"
-        st.markdown(f'<div style="font-size:0.68rem;color:#3b82f6;margin-bottom:6px;">表示: {st.session_state.ip}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:0.68rem;color:#3b82f6;margin-bottom:10px;">表示期間: {st.session_state.ip}</div>', unsafe_allow_html=True)
 
-        # 差枚オーバーライド
+        # 差枚オーバーライド計算
         diff_override = None
         if st.session_state.ip != "前日" and history:
             days = 3 if st.session_state.ip == "直近3日" else 7
@@ -1486,25 +1479,13 @@ with tab_island:
                 vals = [ddict[d]["diff"] for d in ds if not np.isnan(ddict[d]["diff"])]
                 if vals: diff_override[num] = sum(vals)
 
-        with st.spinner("描画中..."):
-            fig = make_pdf_island_map(df, target_machines=set(), diff_override=diff_override)
-            st.plotly_chart(fig, use_container_width=False, config={
-                "displayModeBar": True, "displaylogo": False, "scrollZoom": True,
-                "modeBarButtonsToRemove": ["lasso2d","select2d"],
-                "toImageButtonOptions": {
-                    "format": "png",
-                    "filename": f"島図_{today_date}_{st.session_state.ip}",
-                    "height": PDF_IMG_H, "width": PDF_IMG_W, "scale": 2
-                }
-            })
-        st.markdown('<div style="font-size:0.65rem;color:#475569;">📸 右上のカメラアイコンでPNG保存 / ピンチでズーム可</div>', unsafe_allow_html=True)
+        # ダウンロードボタン
+        st.markdown('<div style="font-size:0.8rem;color:#06b6d4;margin-bottom:8px;">📥 島図画像をダウンロード</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:0.7rem;color:#475569;margin-bottom:10px;">ボタンを押すと高画質PNG画像を生成します</div>', unsafe_allow_html=True)
 
-        # ── 高画質ダウンロード ──
-        st.markdown('<div style="font-size:0.75rem;color:#06b6d4;margin:10px 0 6px;">📥 画像ダウンロード</div>', unsafe_allow_html=True)
-        if st.button("🖼 島図をPNG画像として生成", use_container_width=True, key="dl_island"):
-            with st.spinner("画像を生成中..."):
+        if st.button("🖼 島図PNG を生成してダウンロード", use_container_width=True, key="dl_island"):
+            with st.spinner("画像生成中... しばらくお待ちください"):
                 try:
-                    # diff_mapをタプルに変換してキャッシュキーに使う
                     if diff_override:
                         dm = diff_override
                     else:
@@ -1520,14 +1501,25 @@ with tab_island:
                         use_container_width=True,
                         key="dl_island_btn"
                     )
-                    st.success("✅ 画像生成完了！ダウンロードボタンを押してください")
+                    st.success("✅ 生成完了！上のボタンでダウンロードできます")
                 except Exception as e:
                     st.error(f"画像生成エラー: {e}")
 
+        # 凡例
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.markdown('<div style="font-size:0.72rem;color:#94a3b8;margin-bottom:6px;">カラー凡例</div>', unsafe_allow_html=True)
+        st.markdown("""<div style="display:flex;gap:4px;flex-wrap:wrap;font-size:0.65rem;">
+          <span style="background:#fff;color:#ef4444;border:1.5px solid #ef4444;padding:2px 6px;border-radius:3px;font-weight:bold;">マイナス</span>
+          <span style="background:#f0f0f0;color:#999;border:1px solid #ccc;padding:2px 6px;border-radius:3px;">0</span>
+          <span style="background:#64b4dc;color:#fff;padding:2px 6px;border-radius:3px;">+1〜</span>
+          <span style="background:#b4b400;color:#fff;padding:2px 6px;border-radius:3px;">+1000〜</span>
+          <span style="background:#50a03c;color:#fff;padding:2px 6px;border-radius:3px;">+2000〜</span>
+          <span style="background:#b432b4;color:#fff;padding:2px 6px;border-radius:3px;">+3000〜</span>
+          <span style="background:#cc0000;color:#fff;padding:2px 6px;border-radius:3px;">+4000〜</span>
+          <span style="background:#8b0000;color:#fff;padding:2px 6px;border-radius:3px;">+5000〜</span>
+          <span style="background:#111;color:#ff4444;padding:2px 6px;border-radius:3px;">+10000↑</span>
+        </div>""", unsafe_allow_html=True)
 
-# ═══════════════════════════════════════════════════════
-# 📋 全台一覧
-# ═══════════════════════════════════════════════════════
 with tab_all:
     if df is None or not isinstance(df, pd.DataFrame) or df.empty:
         st.info("データ読み込み中...")
