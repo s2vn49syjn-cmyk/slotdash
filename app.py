@@ -358,8 +358,8 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
     draw = ImageDraw.Draw(bg)
 
     # フォント（日本語対応 - 複数パスを試行）
-    FONT_SIZE = 22
-    FONT_SM = 14
+    FONT_SIZE = 17
+    FONT_SM = 13
     JP_FONT_PATHS = [
         "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf",
         "/usr/share/fonts/opentype/ipaexfont-gothic/ipaexg.ttf",
@@ -403,9 +403,9 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
         if diff < 0: return (220, 0, 0)
         return (200, 200, 200)
 
-    OFFSET_Y = 28
-    BW = 46
-    BH = 24
+    OFFSET_Y = 30
+    BW = 58
+    BH = 22
     NAME_OFFSET = 20  # 機種名はバッジの下に表示
 
     for num, (rx, ry) in PDF_POSITIONS.items():
