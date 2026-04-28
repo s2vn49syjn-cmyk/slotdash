@@ -357,15 +357,29 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
     W, H = bg.size
     draw = ImageDraw.Draw(bg)
 
-    # フォント（日本語対応 NotoSansCJK）
+    # フォント（日本語対応 - 複数パスを試行）
     FONT_SIZE = 22
-    FONT_SM = 14  # 機種名用
-    JP_FONT_BOLD = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
-    JP_FONT_REG  = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
-    try:
-        font    = ImageFont.truetype(JP_FONT_BOLD, FONT_SIZE, index=0)
-        font_sm = ImageFont.truetype(JP_FONT_REG,  FONT_SM,   index=0)
-    except Exception as fe:
+    FONT_SM = 14
+    JP_FONT_PATHS = [
+        "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf",
+        "/usr/share/fonts/opentype/ipaexfont-gothic/ipaexg.ttf",
+        "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "fonts/ipag.ttf",  # リポジトリ同梱用
+    ]
+    font = None
+    font_sm = None
+    for fp in JP_FONT_PATHS:
+        try:
+            import os
+            if not os.path.exists(fp): continue
+            kw = {"index": 0} if fp.endswith(".ttc") else {}
+            font    = ImageFont.truetype(fp, FONT_SIZE, **kw)
+            font_sm = ImageFont.truetype(fp, FONT_SM,   **kw)
+            break
+        except: continue
+    if font is None:
         font    = ImageFont.load_default()
         font_sm = font
 
