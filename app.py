@@ -403,10 +403,13 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
         if diff < 0: return (220, 0, 0)
         return (200, 200, 200)
 
-    OFFSET_Y = 30
-    BW = 58
-    BH = 22
-    NAME_OFFSET = 20  # 機種名はバッジの下に表示
+    # レイアウト: [差枚バッジ] ← 台番テキスト(PDF) → [機種名]
+    # PDFの台番位置(py)を基準に
+    # 差枚バッジは台番の上（台番を隠さない）
+    # 機種名は台番の下
+    BW = 56   # バッジ幅
+    BH = 20   # バッジ高さ
+    BADGE_OFFSET = 26  # 台番位置から差枚バッジの中心までの距離（上方向）
 
     for num, (rx, ry) in PDF_POSITIONS.items():
         diff = diff_map.get(num)
@@ -414,16 +417,17 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
             continue
 
         px = int(rx * W)
-        py = int(ry * H) - OFFSET_Y
+        py = int(ry * H)  # PDFの台番テキストの位置（そのまま使う）
 
+        # ── 差枚バッジ（台番の上）──
+        badge_cy = py - BADGE_OFFSET  # バッジ中心Y
         color = get_color(diff)
-        x0, y0 = px - BW//2, py - BH//2
-        x1, y1 = px + BW//2, py + BH//2
-        draw.rectangle([x0, y0, x1, y1], fill=color)
         outline_c = get_outline_color(diff)
+        x0, y0 = px - BW//2, badge_cy - BH//2
+        x1, y1 = px + BW//2, badge_cy + BH//2
+        draw.rectangle([x0, y0, x1, y1], fill=color)
         draw.rectangle([x0, y0, x1, y1], outline=outline_c, width=1)
 
-        # 差枚テキスト
         text = f"+{int(diff):,}" if diff > 0 else ("0" if diff == 0 else f"{int(diff):,}")
         text_color = get_text_color(diff)
         try:
@@ -432,9 +436,9 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
             th = bbox[3] - bbox[1]
         except:
             tw, th = len(text) * 9, FONT_SIZE
-        draw.text((px - tw//2, py - th//2), text, fill=text_color, font=font)
+        draw.text((px - tw//2, badge_cy - th//2), text, fill=text_color, font=font)
 
-        # 機種名テキスト（バッジの下）
+        # ── 機種名（台番の下）──
         machine = machine_map.get(num, "")
         if machine:
             short = shorten_name(machine)
@@ -444,13 +448,12 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
                 mh = mbbox[3] - mbbox[1]
             except:
                 mw, mh = len(short) * 7, FONT_SM
-            # 機種名背景（半透明っぽく白地）
-            mx0 = px - mw//2 - 2
-            my0 = py + BH//2 + 2
-            mx1 = px + mw//2 + 2
-            my1 = my0 + mh + 2
+            mx0 = px - mw//2 - 1
+            my0 = py + 14  # 台番の下に余白
+            mx1 = px + mw//2 + 1
+            my1 = my0 + mh + 1
             draw.rectangle([mx0, my0, mx1, my1], fill=(255, 255, 255))
-            draw.text((px - mw//2, my0 + 1), short, fill=(40, 40, 40), font=font_sm)
+            draw.text((px - mw//2, my0 + 1), short, fill=(50, 50, 50), font=font_sm)
 
     buf = io.BytesIO()
     bg_rgb = bg.convert("RGB")
