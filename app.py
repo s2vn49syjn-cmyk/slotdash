@@ -344,26 +344,35 @@ def _load_bg_image():
     return Image.open(io.BytesIO(img_data)).convert("RGB")
 
 @st.cache_data(show_spinner=False)
-def generate_island_image(diff_map_tuple, date_key=""):
-    """PILで高速に差枚オーバーレイ画像を生成（キャッシュ付き）"""
+def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_pdf=False):
+    """PILで高速に差枚+機種名オーバーレイ画像を生成（キャッシュ付き）"""
     from PIL import Image, ImageDraw, ImageFont
     import io
 
     diff_map = dict(diff_map_tuple)
+    machine_map = dict(machine_map_tuple)
 
-    # 背景をコピー（キャッシュから）
+    # 背景をコピー
     bg = _load_bg_image().copy()
     W, H = bg.size
     draw = ImageDraw.Draw(bg)
 
-    # フォント
+    # フォント（日本語対応）
     FONT_SIZE = 22
+    FONT_SM = 13  # 機種名用
+    JP_FONT_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+    JP_FONT_BOLD = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", FONT_SIZE)
+        font = ImageFont.truetype(JP_FONT_BOLD, FONT_SIZE)
+        font_sm = ImageFont.truetype(JP_FONT_PATH, FONT_SM)
     except:
-        font = ImageFont.load_default()
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", FONT_SIZE)
+            font_sm = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", FONT_SM)
+        except:
+            font = ImageFont.load_default()
+            font_sm = font
 
-    # 色定義
     def get_color(diff):
         if diff >= 10000: return (17, 17, 17)
         if diff >= 5000:  return (139, 0, 0)
@@ -376,19 +385,19 @@ def generate_island_image(diff_map_tuple, date_key=""):
         return (255, 255, 255)  # マイナスは白背景
 
     def get_text_color(diff):
-        if diff < 0: return (220, 0, 0)       # マイナスは赤文字
+        if diff < 0: return (220, 0, 0)
         if diff >= 1000: return (255, 255, 255)
         return (40, 40, 40)
 
     def get_outline_color(diff):
-        if diff < 0: return (220, 0, 0)  # マイナスは赤枠
-        return (255, 255, 255)
+        if diff < 0: return (220, 0, 0)
+        return (200, 200, 200)
 
     OFFSET_Y = 32
     BW = 52
     BH = 26
+    NAME_OFFSET = 20  # 機種名はバッジの下に表示
 
-    # 全バッジを一括描画（alpha_compositeなし・高速）
     for num, (rx, ry) in PDF_POSITIONS.items():
         diff = diff_map.get(num)
         if diff is None or (isinstance(diff, float) and np.isnan(diff)):
@@ -398,17 +407,15 @@ def generate_island_image(diff_map_tuple, date_key=""):
         py = int(ry * H) - OFFSET_Y
 
         color = get_color(diff)
-        # 角丸風に見せるため外枠も描画
         x0, y0 = px - BW//2, py - BH//2
         x1, y1 = px + BW//2, py + BH//2
         draw.rectangle([x0, y0, x1, y1], fill=color)
-        # 枠線（マイナスは赤枠）
         outline_c = get_outline_color(diff)
-        draw.rectangle([x0, y0, x1, y1], outline=outline_c, width=2)
+        draw.rectangle([x0, y0, x1, y1], outline=outline_c, width=1)
 
+        # 差枚テキスト
         text = f"+{int(diff):,}" if diff > 0 else ("0" if diff == 0 else f"{int(diff):,}")
         text_color = get_text_color(diff)
-
         try:
             bbox = draw.textbbox((0, 0), text, font=font)
             tw = bbox[2] - bbox[0]
@@ -417,8 +424,31 @@ def generate_island_image(diff_map_tuple, date_key=""):
             tw, th = len(text) * 9, FONT_SIZE
         draw.text((px - tw//2, py - th//2), text, fill=text_color, font=font)
 
+        # 機種名テキスト（バッジの下）
+        machine = machine_map.get(num, "")
+        if machine:
+            short = shorten_name(machine)
+            try:
+                mbbox = draw.textbbox((0, 0), short, font=font_sm)
+                mw = mbbox[2] - mbbox[0]
+                mh = mbbox[3] - mbbox[1]
+            except:
+                mw, mh = len(short) * 7, FONT_SM
+            # 機種名背景（半透明っぽく白地）
+            mx0 = px - mw//2 - 2
+            my0 = py + BH//2 + 2
+            mx1 = px + mw//2 + 2
+            my1 = my0 + mh + 2
+            draw.rectangle([mx0, my0, mx1, my1], fill=(255, 255, 255))
+            draw.text((px - mw//2, my0 + 1), short, fill=(40, 40, 40), font=font_sm)
+
     buf = io.BytesIO()
-    bg.save(buf, format="PNG", optimize=True)
+    if as_pdf:
+        # PDFとして出力
+        bg_rgb = bg.convert("RGB")
+        bg_rgb.save(buf, format="PDF", resolution=150)
+    else:
+        bg.save(buf, format="PNG", optimize=True)
     return buf.getvalue()
 
 
@@ -1483,25 +1513,37 @@ with tab_island:
         st.markdown('<div style="font-size:0.8rem;color:#06b6d4;margin-bottom:8px;">📥 島図画像をダウンロード</div>', unsafe_allow_html=True)
         st.markdown('<div style="font-size:0.7rem;color:#475569;margin-bottom:10px;">ボタンを押すと高画質PNG画像を生成します</div>', unsafe_allow_html=True)
 
-        if st.button("🖼 島図PNG を生成してダウンロード", use_container_width=True, key="dl_island"):
-            with st.spinner("画像生成中... しばらくお待ちください"):
+        # 出力形式選択
+        out_fmt = st.radio("出力形式", ["📄 PDF", "🖼 PNG"], horizontal=True, key="island_fmt")
+
+        if st.button("生成してダウンロード", use_container_width=True, key="dl_island"):
+            with st.spinner("画像生成中..."):
                 try:
                     if diff_override:
                         dm = diff_override
                     else:
                         dm = {int(r["台番"]): r["前日差枚"] for _, r in df.iterrows() if not np.isnan(r["台番"])}
+                    mm = {int(r["台番"]): r["機種名"] for _, r in df.iterrows() if not np.isnan(r["台番"])}
                     dm_tuple = tuple(sorted(dm.items()))
-                    img_bytes = generate_island_image(dm_tuple, date_key=f"{today_date}_{st.session_state.ip}")
-                    fname = f"島図_{today_date}_{st.session_state.ip}.png"
+                    mm_tuple = tuple(sorted(mm.items()))
+                    as_pdf = "PDF" in out_fmt
+                    img_bytes = generate_island_image(
+                        dm_tuple, mm_tuple,
+                        date_key=f"{today_date}_{st.session_state.ip}_{out_fmt}",
+                        as_pdf=as_pdf
+                    )
+                    ext = "pdf" if as_pdf else "png"
+                    mime = "application/pdf" if as_pdf else "image/png"
+                    fname = f"島図_{today_date}_{st.session_state.ip}.{ext}"
                     st.download_button(
                         label=f"📥 {fname} をダウンロード",
                         data=img_bytes,
                         file_name=fname,
-                        mime="image/png",
+                        mime=mime,
                         use_container_width=True,
                         key="dl_island_btn"
                     )
-                    st.success("✅ 生成完了！上のボタンでダウンロードできます")
+                    st.success("✅ 生成完了！")
                 except Exception as e:
                     st.error(f"画像生成エラー: {e}")
 
