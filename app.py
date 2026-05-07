@@ -422,13 +422,8 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
         if diff < 0: return (220, 0, 0)
         return (200, 200, 200)
 
-    # レイアウト: [差枚バッジ] ← 台番テキスト(PDF) → [機種名]
-    # PDFの台番位置(py)を基準に
-    # 差枚バッジは台番の上（台番を隠さない）
-    # 機種名は台番の下
-    BW = 56   # バッジ幅
-    BH = 20   # バッジ高さ
-    BADGE_OFFSET = 26  # 台番位置から差枚バッジの中心までの距離（上方向）
+    BW = 56
+    BH = 20
 
     for num, (rx, ry) in PDF_POSITIONS.items():
         diff = diff_map.get(num)
@@ -436,21 +431,16 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
             continue
         diff = float(diff)
 
-        # バッジ位置: ZERO_POSITIONSがあればその「0」座標、なければPDF_POSITIONSを使用
-        if num in ZERO_POSITIONS:
-            zx, zy = ZERO_POSITIONS[num]
-            px = int(zx * W)
-            py = int(zy * H)
-        else:
-            px = int(rx * W)
-            py = int(ry * H)
+        # PDF_POSITIONSの座標をそのまま使用
+        px = int(rx * W)
+        py = int(ry * H)
 
-        # ── 差枚バッジ（0の上に重ねる）──
-        badge_cy = py  # 0の位置に重ねる
         color = get_color(diff)
         outline_c = get_outline_color(diff)
-        x0, y0 = px - BW//2, badge_cy - BH//2
-        x1, y1 = px + BW//2, badge_cy + BH//2
+
+        # 差枚バッジ（台番座標に重ねる）
+        x0, y0 = px - BW//2, py - BH//2
+        x1, y1 = px + BW//2, py + BH//2
         draw.rectangle([x0, y0, x1, y1], fill=color)
         draw.rectangle([x0, y0, x1, y1], outline=outline_c, width=1)
 
@@ -462,9 +452,9 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
             th = bbox[3] - bbox[1]
         except:
             tw, th = len(text) * 9, FONT_SIZE
-        draw.text((px - tw//2, badge_cy - th//2), text, fill=text_color, font=font)
+        draw.text((px - tw//2, py - th//2), text, fill=text_color, font=font)
 
-        # ── 機種名（台番の下）──
+        # 機種名（バッジの下）
         machine = machine_map.get(num, "")
         if machine:
             short = shorten_name(machine)
@@ -475,9 +465,9 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
             except:
                 mw, mh = len(short) * 7, FONT_SM
             mx0 = px - mw//2 - 1
-            my0 = py + 14  # 台番の下に余白
+            my0 = py + BH//2 + 2
             mx1 = px + mw//2 + 1
-            my1 = my0 + mh + 1
+            my1 = my0 + mh + 2
             draw.rectangle([mx0, my0, mx1, my1], fill=(255, 255, 255))
             draw.text((px - mw//2, my0 + 1), short, fill=(50, 50, 50), font=font_sm)
 
