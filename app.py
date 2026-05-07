@@ -438,9 +438,10 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
         color = get_color(diff)
         outline_c = get_outline_color(diff)
 
-        # 差枚バッジ（台番座標に重ねる）
-        x0, y0 = px - BW//2, py - BH//2
-        x1, y1 = px + BW//2, py + BH//2
+        # 差枚バッジ（台番の上にずらして台番が見えるように）
+        SHIFT = 18  # 上にずらすピクセル数
+        x0, y0 = px - BW//2, py - BH//2 - SHIFT
+        x1, y1 = px + BW//2, py + BH//2 - SHIFT
         draw.rectangle([x0, y0, x1, y1], fill=color)
         draw.rectangle([x0, y0, x1, y1], outline=outline_c, width=1)
 
@@ -452,7 +453,7 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
             th = bbox[3] - bbox[1]
         except:
             tw, th = len(text) * 9, FONT_SIZE
-        draw.text((px - tw//2, py - th//2), text, fill=text_color, font=font)
+        draw.text((px - tw//2, py - th//2 - SHIFT), text, fill=text_color, font=font)
 
         # 機種名（バッジの下）
         machine = machine_map.get(num, "")
