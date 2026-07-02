@@ -280,10 +280,94 @@ def scrape_and_save(target_date=None):
     return True
 
 
+def check_missing_dates(spreadsheet, days_back=7):
+    """過去N日分でデータが欠けている日付を返す"""
+    jst = datetime.utcnow() + timedelta(hours=9)
+    existing = set()
+    for ws in spreadsheet.worksheets():
+        if re.match(r"\d{4}-\d{2}-\d{2}", ws.title):
+            # データが実際に入っているか確認（2行以上=ヘッダー+データ）
+            try:
+                if ws.row_count >= 2 and len(ws.get_all_values()) >= 2:
+                    existing.add(ws.title)
+            except:
+                pass
+
+    missing = []
+    for i in range(1, days_back + 1):
+        d = (jst - timedelta(days=i)).strftime("%Y-%m-%d")
+        if d not in existing:
+            missing.append(d)
+    return missing
+
+
+def scrape_with_retry(target_date=None, max_retries=3):
+    """リトライ付きスクレイピング"""
+    for attempt in range(1, max_retries + 1):
+        print(f"=== 試行 {attempt}/{max_retries} ===")
+        try:
+            ok = scrape_and_save(target_date=target_date)
+            if ok:
+                return True
+            print(f"⚠️ 試行{attempt}失敗")
+        except Exception as e:
+            print(f"⚠️ 試行{attempt}エラー: {e}")
+
+        if attempt < max_retries:
+            wait = 30 * attempt  # 30秒、60秒待ってリトライ
+            print(f"{wait}秒待機してリトライ...")
+            time.sleep(wait)
+
+    print(f"❌ {max_retries}回試行しても失敗")
+    return False
+
+
 if __name__ == "__main__":
     import sys
-    target = sys.argv[1] if len(sys.argv) > 1 else None
-    if target:
-        print(f"日付指定: {target}")
-    ok = scrape_and_save(target_date=target)
-    exit(0 if ok else 1)
+
+    # モード判定
+    mode = sys.argv[1] if len(sys.argv) > 1 else "normal"
+
+    spreadsheet = connect_sheets()
+
+    if mode == "backfill":
+        # 欠損補完モード：過去7日分の欠けている日を全部取得
+        print("=== 欠損補完モード ===")
+        missing = check_missing_dates(spreadsheet, days_back=7)
+        print(f"欠損日付: {missing}")
+
+        if not missing:
+            print("✅ 欠損なし。全日程のデータが揃っています。")
+            exit(0)
+
+        success_count = 0
+        for date_str in missing:
+            print(f"\n--- {date_str} を取得 ---")
+            if scrape_with_retry(target_date=date_str, max_retries=2):
+                success_count += 1
+                time.sleep(5)  # 連続取得の間隔
+
+        print(f"\n補完完了: {success_count}/{len(missing)}日分を取得")
+        exit(0 if success_count > 0 else 1)
+
+    else:
+        # 通常モード：昨日または指定日を取得（リトライ付き）
+        target = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] != "normal" else None
+        if target:
+            print(f"日付指定: {target}")
+        ok = scrape_with_retry(target_date=target, max_retries=3)
+
+        # 通常取得後、欠損チェックして自動補完
+        if ok:
+            print("\n=== 欠損自動チェック ===")
+            missing = check_missing_dates(spreadsheet, days_back=7)
+            if missing:
+                print(f"欠損日付を発見: {missing} → 自動補完します")
+                for date_str in missing:
+                    print(f"--- {date_str} を補完 ---")
+                    scrape_with_retry(target_date=date_str, max_retries=2)
+                    time.sleep(5)
+            else:
+                print("欠損なし")
+
+        exit(0 if ok else 1)
