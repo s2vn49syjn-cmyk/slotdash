@@ -363,7 +363,7 @@ def _load_bg_image():
     return Image.open(io.BytesIO(img_data)).convert("RGB")
 
 @st.cache_data(show_spinner=False)
-def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_pdf=False, mode="diff"):
+def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_pdf=False, mode="diff", caption=""):
     """PILで高速に差枚+機種名オーバーレイ画像を生成（キャッシュ付き）"""
     from PIL import Image, ImageDraw, ImageFont
     import io
@@ -443,6 +443,15 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
 
     BW = 56
     BH = 20
+
+    # キャプション（左上に表示期間などを焼き込み）
+    if caption:
+        try:
+            cap_font = ImageFont.truetype(JP_FONT_PATHS[0], 30) if font else font
+        except Exception:
+            cap_font = font
+        draw.rectangle([10, 8, 620, 52], fill=(255, 255, 255))
+        draw.text((18, 14), caption, fill=(0, 0, 0), font=cap_font)
 
     for num, (rx, ry) in PDF_POSITIONS.items():
         diff = diff_map.get(num)
@@ -2119,6 +2128,13 @@ with tab_island:
         dtype = st.radio("表示データ", ["💰 差枚", "🔄 回転数"], horizontal=True, key="island_dtype")
         is_rot = "回転数" in dtype
 
+        # 履歴不足の警告
+        if st.session_state.ip != "前日":
+            need = 3 if st.session_state.ip == "直近3日" else 7
+            have = len(sorted_dates)
+            if have < need:
+                st.warning(f"⚠️ 履歴が{have}日分しかありません。{st.session_state.ip}を選んでも実際は{have}日分での計算になります（前日と同じ値になる場合があります）")
+
         # オーバーライド計算（差枚=期間合計 / 回転数=期間平均）
         diff_override = None
         if history and (st.session_state.ip != "前日" or is_rot):
@@ -2157,7 +2173,8 @@ with tab_island:
                         dm_tuple, mm_tuple,
                         date_key=f"{today_date}_{st.session_state.ip}_{out_fmt}_{dtype}",
                         as_pdf=as_pdf,
-                        mode=("rot" if is_rot else "diff")
+                        mode=("rot" if is_rot else "diff"),
+                        caption=f"{'回転数' if is_rot else '差枚'} / {st.session_state.ip} / {today_date}時点 / 履歴{len(sorted_dates)}日"
                     )
                     ext = "pdf" if as_pdf else "png"
                     mime = "application/pdf" if as_pdf else "image/png"
