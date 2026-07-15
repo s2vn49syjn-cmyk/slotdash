@@ -557,6 +557,7 @@ def load_today():
         st.error(f"データ読み込みエラー: {e}")
         return None, None
 
+@st.cache_data(ttl=300)
 def load_history(max_days=10):
     try:
         client = get_gspread_client()
@@ -592,6 +593,10 @@ def load_history(max_days=10):
             except: continue
         return history, date_labels
     except Exception as e:
+        try:
+            st.warning(f"履歴読み込みエラー: {e}（右上メニュー→Rerunか、下の再読込ボタンで再試行してください）")
+        except Exception:
+            pass
         return {}, []
 
 # ─────────────────────────────────────────────
@@ -1753,6 +1758,11 @@ tab_dash, tab_island, tab_all, tab_budget, tab_kouryaku = st.tabs([
 # 🏠 ダッシュボード
 # ═══════════════════════════════════════════════════════
 with tab_dash:
+    # 手動再読込（キャッシュクリア）
+    if st.button("🔄 データ再読込", key="reload_all"):
+        st.cache_data.clear()
+        st.rerun()
+
     if df is None or not isinstance(df, pd.DataFrame) or df.empty or "前日差枚" not in df.columns:
         st.info("データ読み込み中... しばらくお待ちください。")
         if df is not None and isinstance(df, pd.DataFrame):
