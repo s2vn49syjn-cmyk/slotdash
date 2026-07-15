@@ -557,6 +557,13 @@ def load_today():
         st.error(f"データ読み込みエラー: {e}")
         return None, None
 
+@st.cache_data(ttl=60)
+def list_sheet_titles():
+    """診断用: スプレッドシートの全シート名"""
+    client = get_gspread_client()
+    sp = client.open_by_key(SPREADSHEET_ID)
+    return [ws.title for ws in sp.worksheets()]
+
 @st.cache_data(ttl=300)
 def load_history(max_days=10):
     try:
@@ -593,11 +600,8 @@ def load_history(max_days=10):
             except: continue
         return history, date_labels
     except Exception as e:
-        try:
-            st.warning(f"履歴読み込みエラー: {e}（右上メニュー→Rerunか、下の再読込ボタンで再試行してください）")
-        except Exception:
-            pass
-        return {}, []
+        # 失敗をキャッシュさせないためraise（呼び出し側で警告表示）
+        raise
 
 # ─────────────────────────────────────────────
 # 設定ラベル管理（Google Sheets「設定記録」シート）
@@ -1741,6 +1745,15 @@ except Exception as _e2:
     history, date_labels = {}, []
 
 sorted_dates = sorted(date_labels, reverse=True) if date_labels else []
+
+# 履歴が空のときの診断表示
+if df is not None and not sorted_dates:
+    try:
+        _titles = list_sheet_titles()
+        st.error(f"⚠️ 履歴が読めていません。スプレッドシートのシート一覧: {_titles}\n\n"
+                 f"日付形式（YYYY-MM-DD）のシートが上に無い場合、アプリが見ているスプレッドシートIDが違うか、シート名の形式が異なります。")
+    except Exception as _e3:
+        st.error(f"⚠️ シート一覧の取得も失敗: {_e3}")
 
 if df is not None:
     st.markdown(f'<div style="font-size:0.68rem;color:#475569;margin-bottom:8px;">最終データ: {today_date} | 全{len(df)}台</div>', unsafe_allow_html=True)
