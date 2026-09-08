@@ -363,7 +363,7 @@ def _load_bg_image():
     return Image.open(io.BytesIO(img_data)).convert("RGB")
 
 @st.cache_data(show_spinner=False)
-def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_pdf=False, mode="diff", caption=""):
+def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_pdf=False, mode="diff", caption="", targets=()):
     """PILで高速に差枚+機種名オーバーレイ画像を生成（キャッシュ付き）"""
     from PIL import Image, ImageDraw, ImageFont
     import io
@@ -502,6 +502,28 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
             my1 = my0 + mh + 2
             draw.rectangle([mx0, my0, mx1, my1], fill=(255, 255, 255))
             draw.text((px - mw//2, my0 + 1), short, fill=(50, 50, 50), font=font_sm)
+
+    # ── 狙い台マーキング（優先順にピンク枠＋番号） ──
+    MARK_COLOR = (255, 0, 150)
+    for rank, tnum in enumerate(targets, start=1):
+        if tnum not in PDF_POSITIONS:
+            continue
+        rx, ry = PDF_POSITIONS[tnum]
+        px, py = int(rx * W), int(ry * H)
+        mx0, my0 = px - 32, py - 32
+        mx1, my1 = px + 32, py + 30
+        draw.rectangle([mx0, my0, mx1, my1], outline=MARK_COLOR, width=3)
+        # 優先順位の丸数字
+        r = 13
+        cx, cy = mx0, my0
+        draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=MARK_COLOR)
+        rt = str(rank)
+        try:
+            rb = draw.textbbox((0, 0), rt, font=font)
+            rw, rh = rb[2] - rb[0], rb[3] - rb[1]
+        except Exception:
+            rw, rh = 8, 12
+        draw.text((cx - rw // 2, cy - rh // 2 - 1), rt, fill=(255, 255, 255), font=font)
 
     buf = io.BytesIO()
     bg_rgb = bg.convert("RGB")
@@ -1827,6 +1849,25 @@ with tab_dash:
         else:
             summary_df = pd.DataFrame()
 
+        # ── 高回転凹み台（前日） ──
+        st.markdown('<div class="sec-title">⚡ 高回転凹み台（前日 7000G以上×1000枚以下）</div>', unsafe_allow_html=True)
+        if df is not None and not df.empty:
+            hot_cond = (df["回転数"] >= 7000) & (df["前日差枚"] <= 1000)
+            hot_df = df[hot_cond].sort_values("前日差枚").copy()
+            if hot_df.empty:
+                st.info("該当台なし")
+            else:
+                disp_hot = pd.DataFrame({
+                    "台番": hot_df["台番"].astype(int),
+                    "機種": hot_df["機種名"].apply(shorten_name),
+                    "前日差枚": hot_df["前日差枚"].apply(diff_sign),
+                    "回転数": hot_df["回転数"].apply(lambda x: f"{int(x):,}G"),
+                })
+                st.markdown(f'<div style="font-size:0.68rem;color:#94a3b8;margin-bottom:6px;">{len(hot_df)}台 該当（差枚が低い順）</div>', unsafe_allow_html=True)
+                st.dataframe(disp_hot, hide_index=True, use_container_width=True, height=400)
+        else:
+            st.info("前日データがありません")
+
         # ── 平均回転数ランキング ──
         st.markdown('<div class="sec-title">🔄 平均回転数ランキング（直近3日）</div>', unsafe_allow_html=True)
 
@@ -2151,6 +2192,23 @@ with tab_island:
         dtype = st.radio("表示データ", ["💰 差枚", "🔄 回転数"], horizontal=True, key="island_dtype")
         is_rot = "回転数" in dtype
 
+        # 狙い台マーキング入力
+        target_input = st.text_input(
+            "🎯 狙い台マーキング（台番をカンマ区切り・優先順）",
+            key="island_targets", placeholder="例: 999,1000,912"
+        )
+        mark_targets = []
+        for t in re.split(r"[,、\s]+", target_input.strip()):
+            if t.isdigit():
+                n = int(t)
+                if n not in mark_targets:
+                    mark_targets.append(n)
+        if mark_targets:
+            st.markdown(
+                f'<div style="font-size:0.7rem;color:#ec4899;margin-bottom:4px;">マーキング: '
+                + " → ".join(f"{i}位:{n}" for i, n in enumerate(mark_targets, 1))
+                + '</div>', unsafe_allow_html=True)
+
         # 履歴不足の警告
         if st.session_state.ip != "前日":
             need = 3 if st.session_state.ip == "直近3日" else 7
@@ -2194,10 +2252,11 @@ with tab_island:
                     as_pdf = "PDF" in out_fmt
                     img_bytes = generate_island_image(
                         dm_tuple, mm_tuple,
-                        date_key=f"{today_date}_{st.session_state.ip}_{out_fmt}_{dtype}",
+                        date_key=f"{today_date}_{st.session_state.ip}_{out_fmt}_{dtype}_{mark_targets}",
                         as_pdf=as_pdf,
                         mode=("rot" if is_rot else "diff"),
-                        caption=f"{'回転数' if is_rot else '差枚'} / {st.session_state.ip} / {today_date}時点 / 履歴{len(sorted_dates)}日"
+                        caption=f"{'回転数' if is_rot else '差枚'} / {st.session_state.ip} / {today_date}時点 / 履歴{len(sorted_dates)}日",
+                        targets=tuple(mark_targets)
                     )
                     ext = "pdf" if as_pdf else "png"
                     mime = "application/pdf" if as_pdf else "image/png"
