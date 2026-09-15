@@ -1,6 +1,6 @@
 """
 スロダッシュ v5 - スーパーコスモ堺専用 スリムリニューアル版
-4タブ: ダッシュボード / 島図 / 全台 / 収支・攻略
+4タブ: ダッシュボード / 島図 / 全台 / 攻略
 """
 import streamlit as st
 import pandas as pd
@@ -165,10 +165,6 @@ html, body, [class*="css"] {
   transition: border-color 0.15s;
 }
 .kishu-link:hover { border-color: var(--accent); color: var(--accent); }
-
-/* 収支 */
-.balance-plus { color: var(--plus); font-family: "Rajdhani", sans-serif; font-weight: 700; }
-.balance-minus { color: var(--minus); font-family: "Rajdhani", sans-serif; font-weight: 700; }
 
 /* フィルタエリア */
 .filter-area {
@@ -1738,7 +1734,6 @@ def make_pdf_island_map(df, target_machines=None, diff_override=None):
 # Session State
 # ─────────────────────────────────────────────
 if "stars" not in st.session_state: st.session_state.stars = {}
-if "budget_records" not in st.session_state: st.session_state.budget_records = []
 if "table_labels" not in st.session_state: st.session_state.table_labels = {}
 
 # ─────────────────────────────────────────────
@@ -1783,8 +1778,8 @@ else:
 # ─────────────────────────────────────────────
 # タブ
 # ─────────────────────────────────────────────
-tab_dash, tab_island, tab_all, tab_budget, tab_kouryaku = st.tabs([
-    "🏠 ダッシュボード", "🗺 島図", "📋 全台", "💰 収支", "📖 攻略"
+tab_dash, tab_island, tab_all, tab_kouryaku = st.tabs([
+    "🏠 ダッシュボード", "🗺 島図", "📋 全台", "📖 攻略"
 ])
 
 # ═══════════════════════════════════════════════════════
@@ -2345,193 +2340,8 @@ with tab_all:
 
 
 # ═══════════════════════════════════════════════════════
-# 💰 収支・攻略
+# 📖 攻略
 # ═══════════════════════════════════════════════════════
-with tab_budget:
-    if True:
-        st.markdown('<div class="sec-title">💰 収支記録</div>', unsafe_allow_html=True)
-
-        # 交換率定数
-        SLOT_EXCHANGE = 52      # スロット: 52枚=1000円
-        PACHI_EXCHANGE = 280    # パチンコ: 1000円=280発
-        SLOT_UNIT = 1000 / SLOT_EXCHANGE   # 1枚≒19.23円
-        PACHI_UNIT = 1000 / PACHI_EXCHANGE  # 1発≒3.57円
-
-        # ── 今日の収支を計算 ──
-        genre = st.radio("種別", ["🎰 スロット", "🎳 パチンコ", "💴 現金入力"], horizontal=True, key="b_genre")
-
-        with st.expander("＋ 今日の収支を入力", expanded=True):
-
-            # 前回の終了値を朝イチのデフォルトに使う
-            def get_last_end(kind):
-                recs = [r for r in st.session_state.budget_records if r.get("種別") == kind]
-                if not recs: return 0
-                last = sorted(recs, key=lambda r: r["日付"])[-1]
-                return int(last.get("終了", 0))
-
-            if genre == "🎰 スロット":
-                last_val = get_last_end("スロット")
-                tc1, tc2 = st.columns(2)
-                with tc1:
-                    t_before = st.number_input("朝イチ 貯メダル（枚）", min_value=0, value=last_val, step=100, key="t_before")
-                    if last_val > 0:
-                        st.markdown(f'<div style="font-size:0.65rem;color:#3b82f6;">↑ 前回の貯メダルを自動反映</div>', unsafe_allow_html=True)
-                with tc2:
-                    t_after = st.number_input("帰り際 貯メダル（枚）", min_value=0, value=last_val, step=100, key="t_after")
-                t_diff = t_after - t_before
-                t_yen = round(t_diff * SLOT_UNIT)
-                unit_label = f"差枚: {t_diff:+,}枚"
-
-            elif genre == "🎳 パチンコ":
-                last_val = get_last_end("パチンコ")
-                tc1, tc2 = st.columns(2)
-                with tc1:
-                    t_before = st.number_input("朝イチ 持ち玉（発）", min_value=0, value=last_val, step=100, key="t_before_p")
-                    if last_val > 0:
-                        st.markdown(f'<div style="font-size:0.65rem;color:#3b82f6;">↑ 前回の持ち玉を自動反映</div>', unsafe_allow_html=True)
-                with tc2:
-                    t_after = st.number_input("帰り際 持ち玉（発）", min_value=0, value=last_val, step=100, key="t_after_p")
-                t_diff = t_after - t_before
-                t_yen = round(t_diff * PACHI_UNIT)
-                unit_label = f"差玉: {t_diff:+,}発"
-
-            else:  # 現金入力
-                tc1, tc2 = st.columns(2)
-                with tc1:
-                    t_invest = st.number_input("投資（円）", min_value=0, value=0, step=1000, key="t_invest_y")
-                with tc2:
-                    t_collect = st.number_input("回収（円）", min_value=0, value=0, step=1000, key="t_collect_y")
-                t_diff = 0
-                t_yen = t_collect - t_invest
-                unit_label = f"投資: {t_invest:,}円 / 回収: {t_collect:,}円"
-
-            # 計算結果表示
-            tc = "#22c55e" if t_yen >= 0 else "#ef4444"
-            st.markdown(
-                f'<div style="background:#141820;border:1px solid #252d3d;border-radius:10px;padding:14px;margin:8px 0;text-align:center;">' +
-                f'<div style="font-size:0.68rem;color:#475569;margin-bottom:4px;">{unit_label}</div>' +
-                f'<div style="font-family:Rajdhani,sans-serif;font-size:2rem;font-weight:700;color:{tc};">{t_yen:+,}円</div>' +
-                f'<div style="font-size:0.62rem;color:#475569;margin-top:2px;">{"52枚=1000円換算" if genre=="🎰 スロット" else "280発=1000円換算" if genre=="🎳 パチンコ" else "現金"}</div></div>',
-                unsafe_allow_html=True
-            )
-
-            # 保存用入力
-            bc1, bc2 = st.columns(2)
-            with bc1:
-                b_date2 = st.date_input("日付", value=datetime.now().date(), key="b_date2")
-            with bc2:
-                b_memo2 = st.text_input("メモ（任意）", placeholder="例: マイジャグ947番台", key="b_memo2")
-
-            if st.button("💾 記録を保存", use_container_width=True, key="b_add2"):
-                if genre != "💴 現金入力" and t_before == 0 and t_after == 0:
-                    st.warning("メダル/玉数を入力してください")
-                else:
-                    kind = "スロット" if "スロット" in genre else "パチンコ" if "パチンコ" in genre else "現金"
-                    st.session_state.budget_records.append({
-                        "日付": str(b_date2),
-                        "種別": kind,
-                        "開始": t_before if genre != "💴 現金入力" else t_invest if genre == "💴 現金入力" else 0,
-                        "終了": t_after if genre != "💴 現金入力" else t_collect if genre == "💴 現金入力" else 0,
-                        "差枚/差玉": t_diff,
-                        "収支(円)": t_yen,
-                        "メモ": b_memo2,
-                    })
-                    st.success(f"✅ {t_yen:+,}円 を記録しました！")
-                    st.rerun()
-
-        st.markdown("<hr>", unsafe_allow_html=True)
-
-        # ── 記録一覧 ──
-        if not st.session_state.budget_records:
-            st.info("まだ記録がありません")
-        else:
-            brecs = pd.DataFrame(st.session_state.budget_records)
-            brecs["日付"] = pd.to_datetime(brecs["日付"])
-
-            # 種別フィルタ
-            kinds = brecs["種別"].unique().tolist() if "種別" in brecs.columns else []
-            sel_kind = st.multiselect("種別フィルタ", kinds, default=kinds, key="b_kind_filter")
-            if sel_kind:
-                brecs_f = brecs[brecs["種別"].isin(sel_kind)]
-            else:
-                brecs_f = brecs.copy()
-
-            # 総サマリ
-            total_yen = brecs_f["収支(円)"].sum()
-            win_n = (brecs_f["収支(円)"] > 0).sum()
-            lose_n = (brecs_f["収支(円)"] <= 0).sum()
-            sc = "#22c55e" if total_yen >= 0 else "#ef4444"
-
-            st.markdown(
-                f'<div class="sum-cards" style="margin-bottom:10px;">' +
-                f'<div class="sum-card"><div class="sum-val" style="color:{sc};">{total_yen:+,}</div><div class="sum-label">総収支（円）</div></div>' +
-                f'<div class="sum-card"><div class="sum-val" style="color:#22c55e;">{win_n}</div><div class="sum-label">勝ちセッション</div></div>' +
-                f'<div class="sum-card"><div class="sum-val" style="color:#ef4444;">{lose_n}</div><div class="sum-label">負けセッション</div></div>' +
-                f'</div>',
-                unsafe_allow_html=True
-            )
-
-            # 月別集計
-            st.markdown('<div style="font-size:0.75rem;color:#06b6d4;margin:10px 0 6px;">📅 月別収支</div>', unsafe_allow_html=True)
-            brecs_f2 = brecs_f.copy()
-            brecs_f2["月"] = brecs_f2["日付"].dt.strftime("%Y-%m")
-            monthly = brecs_f2.groupby("月").agg(
-                収支合計=("収支(円)", "sum"),
-                回数=("日付", "count"),
-            ).reset_index().sort_values("月", ascending=False)
-
-            for _, mr in monthly.iterrows():
-                mc = "#22c55e" if mr["収支合計"] >= 0 else "#ef4444"
-                avg = int(mr["収支合計"] / mr["回数"]) if mr["回数"] > 0 else 0
-                st.markdown(
-                    f'<div style="background:#141820;border:1px solid #252d3d;border-radius:8px;padding:10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">' +
-                    f'<div><div style="font-family:Rajdhani,sans-serif;font-size:1rem;font-weight:700;color:#e2e8f0;">{mr["月"]}</div>' +
-                    f'<div style="font-size:0.65rem;color:#475569;">{int(mr["回数"])}回 / 平均 {avg:+,}円</div></div>' +
-                    f'<div style="font-family:Rajdhani,sans-serif;font-size:1.2rem;font-weight:700;color:{mc};">{int(mr["収支合計"]):+,}円</div></div>',
-                    unsafe_allow_html=True
-                )
-
-            # 日別明細
-            st.markdown('<div style="font-size:0.75rem;color:#06b6d4;margin:10px 0 6px;">📋 日別明細</div>', unsafe_allow_html=True)
-            for i, (_, dr) in enumerate(brecs_f.sort_values("日付", ascending=False).iterrows()):
-                dc = "#22c55e" if dr["収支(円)"] >= 0 else "#ef4444"
-                kind_icon = "🎰" if dr.get("種別") == "スロット" else "🎳" if dr.get("種別") == "パチンコ" else "💴"
-                memo = f' {dr["メモ"]}' if dr.get("メモ") else ""
-                unit = "枚" if dr.get("種別") == "スロット" else "発" if dr.get("種別") == "パチンコ" else ""
-                diff_label = f'{int(dr["差枚/差玉"]):+,}{unit}' if dr.get("差枚/差玉", 0) != 0 else ""
-
-                rc1, rc2 = st.columns([5, 1])
-                with rc1:
-                    st.markdown(
-                        f'<div style="background:#141820;border-left:3px solid {dc};border-radius:6px;padding:8px 12px;">' +
-                        f'<div style="display:flex;justify-content:space-between;">' +
-                        f'<div><span style="font-size:0.75rem;color:#94a3b8;">{kind_icon} {dr["日付"].strftime("%m/%d")}</span><span style="font-size:0.65rem;color:#475569;margin-left:6px;">{memo}</span></div>' +
-                        f'<div style="text-align:right;"><span style="font-family:Rajdhani,sans-serif;font-size:1rem;font-weight:700;color:{dc};">{int(dr["収支(円)"]):+,}円</span>' +
-                        f'{"  <span style=\'font-size:0.7rem;color:"+dc+";\'>"+diff_label+"</span>" if diff_label else ""}</div></div></div>',
-                        unsafe_allow_html=True
-                    )
-                with rc2:
-                    if st.button("✕", key=f"del_rec_{i}", use_container_width=True):
-                        original_idx = brecs_f.sort_values("日付", ascending=False).index[i]
-                        pos = st.session_state.budget_records.index(
-                            [r for r in st.session_state.budget_records
-                             if str(r["収支(円)"]) == str(int(dr["収支(円)"])) and r["メモ"] == dr.get("メモ","")][0]
-                        ) if any(str(r["収支(円)"]) == str(int(dr["収支(円)"])) for r in st.session_state.budget_records) else -1
-                        if pos >= 0:
-                            st.session_state.budget_records.pop(pos)
-                            st.rerun()
-
-            # CSV
-            csv = brecs.to_csv(index=False, encoding="utf-8-sig")
-            c1, c2 = st.columns(2)
-            with c1:
-                st.download_button("📥 CSV", csv, "収支記録.csv", "text/csv", use_container_width=True)
-            with c2:
-                if st.button("🗑 全クリア", key="b_clear", use_container_width=True):
-                    st.session_state.budget_records = []
-                    st.rerun()
-
-    # ── 攻略サイト ──
 with tab_kouryaku:
     st.markdown('<div class="sec-title">📖 攻略サイト（チョンボリスタ）</div>', unsafe_allow_html=True)
     st.markdown('<div style="font-size:0.7rem;color:#94a3b8;margin-bottom:10px;">機種名をタップするとチョンボリスタで検索します</div>', unsafe_allow_html=True)
