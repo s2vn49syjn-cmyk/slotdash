@@ -1791,12 +1791,12 @@ import hashlib
 import uuid
 import urllib.parse
 
-CATEGORIES = ['高回転・出てない台', '前日高回転', '少数台機種', '多台数機種', 'ジャグラー高稼働']
-if 'selected_category' not in st.session_state:
-    st.session_state.selected_category = CATEGORIES[0]
+MACHINE_GROUPS = ['全機種', 'ジャグラー', 'ジャグラー以外']
+if st.session_state.get('selected_machine_group') not in MACHINE_GROUPS:
+    st.session_state.selected_machine_group = MACHINE_GROUPS[0]
 
-def remember_category():
-    st.session_state.selected_category = st.session_state.category_picker
+def remember_machine_group():
+    st.session_state.selected_machine_group = st.session_state.machine_group_picker
 
 # A random private bookmark separates each visitor's shortlist.
 token = st.query_params.get("list", "")
@@ -1889,28 +1889,15 @@ work['3日平均G'] = work['台番'].apply(lambda n:period_value(n,'rot',3,True)
 counts = df['機種名'].value_counts()
 
 def apply_filters(data):
-    # 全分類共通：店舗の最新3日がすべて揃い、各日の差枚が＋1000枚以下。
+    # おすすめは一本化。最新3日すべて＋1000枚以下、平均6000G以上。
     out = data[data['台番'].apply(lambda n: at_most_1000_in_three_days(n, history, dates))].copy()
-    category = st.session_state.selected_category
-    reasons = ['直近3日、各日＋1000枚以下']
-    if category == '高回転・出てない台':
-        out = out[out['3日平均G'] >= 6000]
-        reasons.append('3日平均6000G以上')
-    elif category == '前日高回転':
-        out = out[(out['回転数'] >= 7000) & (out['前日差枚'] <= 1000)]
-        reasons.append('前日7000G以上・差枚＋1000枚以下')
-    elif category == '少数台機種':
-        out = out[out['機種名'].map(counts).isin([3, 4])]
-        reasons.append('3〜4台構成')
-    elif category == '多台数機種':
-        out = out[out['機種名'].map(counts) >= 8]
-        reasons.append('8台以上構成')
-    elif category == 'ジャグラー高稼働':
-        def high_rotation(num):
-            values = daily_values(num, 'rot', 3)
-            return len(values) == 3 and all(pd.notna(v) and np.isfinite(v) and v >= 6000 for v in values)
-        out = out[out['is_juggler'] & out['台番'].apply(high_rotation)]
-        reasons.append('ジャグラー・3日とも6000G以上')
+    out = out[out['3日平均G'] >= 6000]
+    group = st.session_state.selected_machine_group
+    if group == 'ジャグラー':
+        out = out[out['is_juggler'] == True]
+    elif group == 'ジャグラー以外':
+        out = out[out['is_juggler'] == False]
+    reasons = ['直近3日、各日＋1000枚以下', '3日平均6000G以上', group]
     return out.sort_values('3日合計', ascending=True, na_position='last'), reasons
 
 header,refresh=st.columns([5,1])
@@ -1954,11 +1941,12 @@ def render_card(row, reason, prefix):
     c.button('島図',on_click=goto_map,args=(n,),key=f'{prefix}_map_{n}',use_container_width=True)
 
 if st.session_state.screen=='台を探す':
-    st.subheader('おすすめ台')
-    st.caption('条件設定は不要。分類を選ぶだけで候補が出ます。全分類で各日＋1000枚以下、3日分の差枚が揃った台だけを表示します。')
-    st.radio('分類', CATEGORIES, index=CATEGORIES.index(st.session_state.selected_category),
-             key='category_picker', on_change=remember_category, horizontal=True)
-    st.session_state.selected_category = st.session_state.category_picker
+    st.subheader('おすすめ｜高回転・出てない台')
+    st.caption('直近3日すべて＋1000枚以下 × 3日平均6000G以上。差枚・回転数が3日分揃った台だけ表示します。')
+    st.radio('機種の種類', MACHINE_GROUPS,
+             index=MACHINE_GROUPS.index(st.session_state.selected_machine_group),
+             key='machine_group_picker', on_change=remember_machine_group, horizontal=True)
+    st.session_state.selected_machine_group = st.session_state.machine_group_picker
     result, reasons = apply_filters(work)
     with st.container():
         st.subheader(f'候補 {len(result)}台')
@@ -1985,7 +1973,7 @@ if st.session_state.screen=='台を探す':
         st.caption(f"プラス {(valid>0).sum()}台 · マイナス {(valid<0).sum()}台 · 平均 {diff_sign(valid.mean())}枚")
         ranking = st.radio('ランキング',['前日高回転・＋1000枚以下','3日平均回転数'],horizontal=True)
         ranked = work[(work['回転数']>=7000)&(work['前日差枚']<=1000)].sort_values('前日差枚') if ranking=='前日高回転・＋1000枚以下' else work.dropna(subset=['3日平均G']).sort_values('3日平均G',ascending=False)
-        st.caption('店舗全体のランキングです。おすすめ分類の3日条件は適用しません。')
+        st.caption('店舗全体のランキングです。おすすめの条件は適用しません。')
         st.dataframe(ranked[['台番','機種名','前日差枚','回転数','3日平均G']],hide_index=True,use_container_width=True)
 
 elif st.session_state.screen=='狙い台':
