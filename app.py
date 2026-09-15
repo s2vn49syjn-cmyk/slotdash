@@ -545,7 +545,7 @@ def process_df(df_raw):
     台番col = fc("台番", "台no", "No")
     機種col = fc("機種名", "機種", "name")
     差枚col = fc("差枚", "前日差枚")
-    回転col = fc("回転数", "回転", "G数")
+    回転col = fc("回転数", "回転", "G数", "ゲーム数")
     ボーナスcol = fc("ボーナス", "bonus")
     if not 台番col or not 機種col: return None
     df["台番"] = df_raw[台番col].apply(parse_num)
@@ -555,7 +555,14 @@ def process_df(df_raw):
     df["ボーナス"] = df_raw[ボーナスcol].apply(parse_num) if ボーナスcol else np.nan
     df["週平均"] = df["前日差枚"]
     df["is_juggler"] = df["機種名"].apply(is_juggler)
-    df.index = range(len(df))
+    # 欠損行による上書きを防ぐ。0は有効な値として扱う。
+    df = df[np.isfinite(df["台番"]) & (df["台番"] % 1 == 0)].copy()
+    df["台番"] = df["台番"].astype(int)
+    df["_valid_count"] = df[["前日差枚", "回転数"]].notna().sum(axis=1)
+    df = (df.sort_values("_valid_count", kind="stable")
+            .drop_duplicates("台番", keep="last")
+            .drop(columns="_valid_count")
+            .sort_index().reset_index(drop=True))
     return df
 
 @st.cache_data(ttl=300)
@@ -600,25 +607,16 @@ def load_history(max_days=10):
             try:
                 data = ws.get_all_records()
                 if not data: continue
-                df = pd.DataFrame(data)
-                cols = {c.strip(): c for c in df.columns}
-                def fc(*keys):
-                    for k in keys:
-                        for c in cols:
-                            if k in c: return cols[c]
-                    return None
-                台番col = fc("台番", "台no", "No")
-                差枚col = fc("差枚", "前日差枚", "差枚数")
-                回転col = fc("回転数", "回転", "G数", "ゲーム数")
-                if not 台番col or not 差枚col: continue
-                for _, row in df.iterrows():
-                    try:
-                        num = int(parse_num(row[台番col]))
-                        diff = parse_num(row[差枚col])
-                        rot = parse_num(row[回転col]) if 回転col else np.nan
-                        if num not in history: history[num] = {}
-                        history[num][ws.title] = {"diff": diff, "rot": rot}
-                    except: continue
+                raw = pd.DataFrame(data)
+                # 履歴も前日と同じ正規化・重複排除を適用する。
+                if not any("機種" in str(c) or "name" in str(c) for c in raw.columns):
+                    raw["機種名"] = ""
+                daily = process_df(raw)
+                if daily is None: continue
+                for _, row in daily.iterrows():
+                    num = int(row["台番"])
+                    history.setdefault(num, {})[ws.title] = {
+                        "diff": row["前日差枚"], "rot": row["回転数"]}
             except: continue
         return history, date_labels
     except Exception as e:
@@ -2242,10 +2240,12 @@ with tab_island:
         if st.button("生成してダウンロード", use_container_width=True, key="dl_island"):
             with st.spinner("画像生成中..."):
                 try:
-                    if diff_override:
+                    if diff_override is not None:
                         dm = diff_override
                     else:
-                        dm = {int(r["台番"]): (r["前日差枚"] if not np.isnan(r["前日差枚"]) else 0) for _, r in df.iterrows() if not np.isnan(r["台番"])}
+                        value_col = "回転数" if is_rot else "前日差枚"
+                        dm = {int(r["台番"]): r[value_col] for _, r in df.iterrows()
+                              if pd.notna(r["台番"]) and pd.notna(r[value_col])}
                     mm = {int(r["台番"]): r["機種名"] for _, r in df.iterrows() if not np.isnan(r["台番"])}
                     dm_tuple = tuple(sorted(dm.items()))
                     mm_tuple = tuple(sorted(mm.items()))
