@@ -359,7 +359,7 @@ def _load_bg_image():
     return Image.open(io.BytesIO(img_data)).convert("RGB")
 
 @st.cache_data(show_spinner=False)
-def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_pdf=False, mode="diff", caption="", targets=()):
+def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_pdf=False, mode="diff", caption="", targets=(), recommendations=()):
     """PILで高速に差枚+機種名オーバーレイ画像を生成（キャッシュ付き）"""
     from PIL import Image, ImageDraw, ImageFont
     import io
@@ -499,6 +499,23 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
             draw.rectangle([mx0, my0, mx1, my1], fill=(255, 255, 255))
             draw.text((px - mw//2, my0 + 1), short, fill=(50, 50, 50), font=font_sm)
 
+    # おすすめ枠と星（フォントに依存しない五角星）
+    import math
+    for num in recommendations:
+        if num not in PDF_POSITIONS:
+            continue
+        rx, ry = PDF_POSITIONS[num]
+        px, py = int(rx * W), int(ry * H)
+        orange = (255, 140, 0)
+        draw.rectangle([px-29, py-29, px+29, py+27], outline=orange, width=3)
+        cx, cy = px+23, py+22
+        points = []
+        for i in range(10):
+            angle = -math.pi/2 + i*math.pi/5
+            radius = 10 if i % 2 == 0 else 4.5
+            points.append((cx+radius*math.cos(angle), cy+radius*math.sin(angle)))
+        draw.polygon(points, fill=orange, outline=(110, 60, 0))
+
     # ── 狙い台マーキング（優先順にピンク枠＋番号） ──
     MARK_COLOR = (255, 0, 150)
     for rank, tnum in enumerate(targets, start=1):
@@ -528,6 +545,16 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
     else:
         bg_rgb.save(buf, format="PNG", optimize=True)
     return buf.getvalue()
+
+
+def no_large_plus_in_three_days(num, history, dates):
+    """店舗共通の最新3日を判定。欠損・非有限値は対象外。"""
+    days = sorted(set(dates), reverse=True)[:3]
+    if len(days) != 3 or pd.isna(num):
+        return False
+    daily = history.get(int(num), {})
+    values = [daily.get(day, {}).get("diff", np.nan) for day in days]
+    return all(pd.notna(v) and np.isfinite(v) and v < 2000 for v in values)
 
 
 def process_df(df_raw):
@@ -1785,6 +1812,8 @@ tab_dash, tab_island, tab_all, tab_kouryaku = st.tabs([
 # ═══════════════════════════════════════════════════════
 # 🏠 ダッシュボード
 # ═══════════════════════════════════════════════════════
+recommended_numbers = set()
+filtered_numbers = set()
 with tab_dash:
     # 手動再読込（キャッシュクリア）
     if st.button("🔄 データ再読込", key="reload_all"):
@@ -1938,17 +1967,18 @@ with tab_dash:
         def get_diffs(num, n):
             if not history: return []
             mh = history.get(num, {})
-            ds = sorted(mh.keys(), reverse=True)[:n]
+            ds = [d for d in sorted_dates[:n] if d in mh]
             return [mh[d]["diff"] for d in ds if not np.isnan(mh[d]["diff"])]
 
         def get_rots(num, n):
             if not history: return []
             mh = history.get(num, {})
-            ds = sorted(mh.keys(), reverse=True)[:n]
+            ds = [d for d in sorted_dates[:n] if d in mh]
             return [mh[d].get("rot", np.nan) for d in ds]
 
         def rec_card(row, tags, tag_color="#3b82f6"):
             diff = row["前日差枚"]
+            if pd.notna(row["台番"]): recommended_numbers.add(int(row["台番"]))
             num = int(row["台番"]) if not np.isnan(row["台番"]) else "?"
             dc = "#22c55e" if not np.isnan(diff) and diff >= 0 else "#ef4444"
             tag_html = "".join([f'<span class="rec-tag" style="background:{tag_color}22;color:{tag_color};border:1px solid {tag_color}44;">{t}</span>' for t in tags])
@@ -1967,6 +1997,13 @@ with tab_dash:
         all_mlist = sort_machines(df["機種名"].dropna().unique().tolist(), df)
         sel_machines = st.multiselect("機種フィルタ", all_mlist, default=[], key="dash_mfilter", placeholder="全機種")
         df_t = df[df["機種名"].isin(sel_machines)] if sel_machines else df.copy()
+        rec_no2000 = st.checkbox("直近3日で＋2000枚以上の日がない", value=True, key="rec_no2000")
+        st.caption("各日＋2000枚未満が対象。＋2000枚ちょうど・3日分の差枚欠損は除外。狙い台フィルタにも適用します。")
+        if rec_no2000:
+            df_t = df_t[df_t["台番"].apply(lambda n: no_large_plus_in_three_days(n, history, sorted_dates))]
+            if len(sorted_dates) < 3:
+                st.info("3日分の履歴が必要です。条件に合う台は表示しません。")
+
 
         if not summary_df.empty:
             df_t_sum = summary_df[summary_df["機種名"].isin(sel_machines)] if sel_machines else summary_df.copy()
@@ -2063,6 +2100,8 @@ with tab_dash:
                 found = True
             if not found: st.info("該当台なし")
 
+        recommendation_cards = set(recommended_numbers)
+
         # ── フィルタ ──
         st.markdown('<div class="sec-title">🔍 狙い台フィルタ</div>', unsafe_allow_html=True)
         with st.expander("フィルタを設定", expanded=False):
@@ -2109,6 +2148,9 @@ with tab_dash:
 
         df_disp = df_work.copy()
         active = []
+        if rec_no2000:
+            df_disp = df_disp[df_disp["台番"].apply(lambda n: no_large_plus_in_three_days(n, history, sorted_dates))]
+            active.append("3日間＋2000枚以上なし")
 
         if f_minus: df_disp = df_disp[df_disp["前日差枚"] < 0]; active.append("前日↓")
         if f_big: df_disp = df_disp[df_disp["前日差枚"] <= -3000]; active.append("-3000↓")
@@ -2157,11 +2199,13 @@ with tab_dash:
         else:
             st.markdown(f'<div style="font-size:0.72rem;color:#475569;margin:6px 0;">全台表示 {len(df_disp)}台</div>', unsafe_allow_html=True)
 
+        filtered_numbers = set(df_disp["台番"].dropna().astype(int)) if active else set()
         # フィルタ結果はカードで表示（全台テーブルは廃止）
         if active:
             for _, row in df_disp.head(30).iterrows():
                 rec_card(row, [f"{shorten_name(row['機種名'])}"], "#3b82f6")
 
+        recommended_numbers = recommendation_cards
 
 # ═══════════════════════════════════════════════════════
 # 🗺 島図
@@ -2184,6 +2228,12 @@ with tab_island:
         # 表示データ切替（差枚 / 回転数）
         dtype = st.radio("表示データ", ["💰 差枚", "🔄 回転数"], horizontal=True, key="island_dtype")
         is_rot = "回転数" in dtype
+
+        show_recommendations = st.checkbox("おすすめ台を表示", value=True, key="island_show_recs")
+        rec_source = st.selectbox("印を付ける台", ["おすすめカード掲載台", "狙い台フィルタの全該当台"], key="island_rec_source")
+        selected_recs = recommended_numbers if rec_source == "おすすめカード掲載台" else filtered_numbers
+        marked_recs = tuple(sorted(selected_recs)) if show_recommendations else ()
+        st.caption(f"オレンジ枠＋★：{len(marked_recs)}台 ／ ピンク枠＋番号：自分の狙い台。おすすめは各分類の掲載台の合計、フィルタは表示上限を含めず全該当台です。")
 
         # 狙い台マーキング入力
         target_input = st.text_input(
@@ -2225,49 +2275,29 @@ with tab_island:
                 if vals:
                     diff_override[num] = (sum(vals) / len(vals)) if is_rot else sum(vals)
 
-        # ダウンロードボタン
-        st.markdown('<div style="font-size:0.8rem;color:#06b6d4;margin-bottom:8px;">📥 島図画像をダウンロード</div>', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:0.7rem;color:#475569;margin-bottom:10px;">ボタンを押すと高画質PNG画像を生成します</div>', unsafe_allow_html=True)
-
-        # 出力形式選択
-        out_fmt = st.radio("出力形式", ["📄 PDF", "🖼 PNG"], horizontal=True, key="island_fmt")
-
-        if st.button("生成してダウンロード", use_container_width=True, key="dl_island"):
-            with st.spinner("画像生成中..."):
-                try:
-                    if diff_override is not None:
-                        dm = diff_override
-                    else:
-                        value_col = "回転数" if is_rot else "前日差枚"
-                        dm = {int(r["台番"]): r[value_col] for _, r in df.iterrows()
-                              if pd.notna(r["台番"]) and pd.notna(r[value_col])}
-                    mm = {int(r["台番"]): r["機種名"] for _, r in df.iterrows() if not np.isnan(r["台番"])}
-                    dm_tuple = tuple(sorted(dm.items()))
-                    mm_tuple = tuple(sorted(mm.items()))
-                    as_pdf = "PDF" in out_fmt
-                    img_bytes = generate_island_image(
-                        dm_tuple, mm_tuple,
-                        date_key=f"{today_date}_{st.session_state.ip}_{out_fmt}_{dtype}_{mark_targets}",
-                        as_pdf=as_pdf,
-                        mode=("rot" if is_rot else "diff"),
-                        caption=f"{'回転数' if is_rot else '差枚'} / {st.session_state.ip} / {today_date}時点 / 履歴{len(sorted_dates)}日",
-                        targets=tuple(mark_targets)
-                    )
-                    ext = "pdf" if as_pdf else "png"
-                    mime = "application/pdf" if as_pdf else "image/png"
-                    label = "回転数" if is_rot else "差枚"
-                    fname = f"島図_{label}_{today_date}_{st.session_state.ip}.{ext}"
-                    st.download_button(
-                        label=f"📥 {fname} をダウンロード",
-                        data=img_bytes,
-                        file_name=fname,
-                        mime=mime,
-                        use_container_width=True,
-                        key="dl_island_btn"
-                    )
-                    st.success("✅ 生成完了！")
-                except Exception as e:
-                    st.error(f"画像生成エラー: {e}")
+        value_col = "回転数" if is_rot else "前日差枚"
+        dm = diff_override if diff_override is not None else {
+            int(r["台番"]): r[value_col] for _, r in df.iterrows()
+            if pd.notna(r["台番"]) and pd.notna(r[value_col])}
+        mm = {int(r["台番"]): r["機種名"] for _, r in df.iterrows() if pd.notna(r["台番"])}
+        image_args = dict(
+            diff_map_tuple=tuple(sorted(dm.items())),
+            machine_map_tuple=tuple(sorted(mm.items())),
+            date_key=f"{today_date}_{st.session_state.ip}",
+            mode="rot" if is_rot else "diff",
+            caption=f"{'回転数' if is_rot else '差枚'} / {st.session_state.ip} / {today_date}",
+            targets=tuple(mark_targets), recommendations=marked_recs)
+        try:
+            preview = generate_island_image(**image_args)
+            st.image(preview, caption="★ おすすめ台 ／ ピンク番号：狙い台", use_container_width=True)
+            st.download_button("📥 PNGをダウンロード", preview,
+                f"島図_{today_date}_{st.session_state.ip}.png", "image/png", key="island_png")
+            if st.button("📄 PDFを生成", key="island_pdf_generate"):
+                pdf_bytes = generate_island_image(**image_args, as_pdf=True)
+                st.download_button("📥 PDFをダウンロード", pdf_bytes,
+                    f"島図_{today_date}_{st.session_state.ip}.pdf", "application/pdf", key="island_pdf")
+        except Exception as e:
+            st.error(f"島図生成エラー: {e}")
 
         # 凡例
         st.markdown("<hr>", unsafe_allow_html=True)
