@@ -575,14 +575,14 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
     return buf.getvalue()
 
 
-def no_large_plus_in_three_days(num, history, dates):
+def at_most_1000_in_three_days(num, history, dates):
     """店舗共通の最新3日を判定。欠損・非有限値は対象外。"""
     days = sorted(set(dates), reverse=True)[:3]
     if len(days) != 3 or pd.isna(num):
         return False
     daily = history.get(int(num), {})
     values = [daily.get(day, {}).get("diff", np.nan) for day in days]
-    return all(pd.notna(v) and np.isfinite(v) and v < 2000 for v in values)
+    return all(pd.notna(v) and np.isfinite(v) and v <= 1000 for v in values)
 
 
 def process_df(df_raw):
@@ -1791,21 +1791,12 @@ import hashlib
 import uuid
 import urllib.parse
 
-DEFAULT_FILTERS = dict(q_machines=[], q_juggler="すべて", q_count="指定なし",
-    q_no2000=True, q_prev=False, q_prev_range=(-5000, 0), q_sum_days=3,
-    q_sum=False, q_sum_range=(-10000, 0), q_min_g=0, q_avg_g=0,
-    q_cont_g=0, q_cont_days=3, q_negative=False)
+CATEGORIES = ['高回転・出てない台', '前日高回転', '少数台機種', '多台数機種', 'ジャグラー高稼働']
+if 'selected_category' not in st.session_state:
+    st.session_state.selected_category = CATEGORIES[0]
 
-def set_preset(name):
-    settings = dict(DEFAULT_FILTERS)
-    if name == "高回転凹み": settings.update(q_prev=True, q_prev_range=(-20000, 1000), q_min_g=7000)
-    elif name == "3台構成": settings['q_count'] = "3台"
-    elif name == "ジャグ高回転": settings.update(q_juggler="ジャグのみ", q_cont_g=6000)
-    elif name == "条件をクリア": settings['q_no2000'] = False
-    st.session_state.update(settings)
-
-for key, value in DEFAULT_FILTERS.items():
-    if key not in st.session_state: st.session_state[key] = st.session_state.get("saved_filters", {}).get(key, value)
+def remember_category():
+    st.session_state.selected_category = st.session_state.category_picker
 
 # A random private bookmark separates each visitor's shortlist.
 token = st.query_params.get("list", "")
@@ -1898,35 +1889,29 @@ work['3日平均G'] = work['台番'].apply(lambda n:period_value(n,'rot',3,True)
 counts = df['機種名'].value_counts()
 
 def apply_filters(data):
-    out=data.copy(); reasons=[]; q=st.session_state
-    if q.q_machines: out=out[out['機種名'].isin(q.q_machines)];reasons.append('機種指定')
-    if q.q_juggler!='すべて': out=out[out['is_juggler']==(q.q_juggler=='ジャグのみ')];reasons.append(q.q_juggler)
-    if q.q_count!='指定なし':
-        size=int(q.q_count.replace('台以上','').replace('台',''))
-        out=out[out['機種名'].map(counts).ge(size) if '以上' in q.q_count else out['機種名'].map(counts).eq(size)]
-        reasons.append(q.q_count+'構成')
-    if q.q_no2000:
-        out=out[out['台番'].apply(lambda n:no_large_plus_in_three_days(n,history,dates))]
-        reasons.append('3日間＋2000枚以上なし')
-    if q.q_prev:
-        out=out[out['前日差枚'].between(*q.q_prev_range)]; reasons.append(f'前日 {q.q_prev_range[0]:+,}〜{q.q_prev_range[1]:+,}枚')
-    if q.q_sum:
-        col=f'{q.q_sum_days}日合計';out=out[out[col].between(*q.q_sum_range)];reasons.append(f'{q.q_sum_days}日合計 {q.q_sum_range[0]:+,}〜{q.q_sum_range[1]:+,}枚')
-    if q.q_min_g: out=out[out['回転数']>=q.q_min_g];reasons.append(f'前日{q.q_min_g}G以上')
-    if q.q_avg_g: out=out[out['3日平均G']>=q.q_avg_g];reasons.append(f'3日平均{q.q_avg_g}G以上')
-    if q.q_cont_g or q.q_negative:
-        def check(num):
-            if q.q_cont_g:
-                vs=daily_values(num,'rot',q.q_cont_days)
-                if len(vs)!=q.q_cont_days or not all(pd.notna(v) and v>=q.q_cont_g for v in vs): return False
-            if q.q_negative:
-                vs=daily_values(num,'diff',3)
-                if len(vs)!=3 or not all(pd.notna(v) and v<0 for v in vs):return False
-            return True
-        out=out[out['台番'].apply(check)]
-        if q.q_cont_g:reasons.append(f'{q.q_cont_days}日連続{q.q_cont_g}G以上')
-        if q.q_negative:reasons.append('3日連続マイナス')
-    return out,reasons
+    # 全分類共通：店舗の最新3日がすべて揃い、各日の差枚が＋1000枚以下。
+    out = data[data['台番'].apply(lambda n: at_most_1000_in_three_days(n, history, dates))].copy()
+    category = st.session_state.selected_category
+    reasons = ['直近3日、各日＋1000枚以下']
+    if category == '高回転・出てない台':
+        out = out[out['3日平均G'] >= 6000]
+        reasons.append('3日平均6000G以上')
+    elif category == '前日高回転':
+        out = out[(out['回転数'] >= 7000) & (out['前日差枚'] <= 1000)]
+        reasons.append('前日7000G以上・差枚＋1000枚以下')
+    elif category == '少数台機種':
+        out = out[out['機種名'].map(counts).isin([3, 4])]
+        reasons.append('3〜4台構成')
+    elif category == '多台数機種':
+        out = out[out['機種名'].map(counts) >= 8]
+        reasons.append('8台以上構成')
+    elif category == 'ジャグラー高稼働':
+        def high_rotation(num):
+            values = daily_values(num, 'rot', 3)
+            return len(values) == 3 and all(pd.notna(v) and np.isfinite(v) and v >= 6000 for v in values)
+        out = out[out['is_juggler'] & out['台番'].apply(high_rotation)]
+        reasons.append('ジャグラー・3日とも6000G以上')
+    return out.sort_values('3日合計', ascending=True, na_position='last'), reasons
 
 header,refresh=st.columns([5,1])
 with header:
@@ -1969,30 +1954,13 @@ def render_card(row, reason, prefix):
     c.button('島図',on_click=goto_map,args=(n,),key=f'{prefix}_map_{n}',use_container_width=True)
 
 if st.session_state.screen=='台を探す':
-    left,right=st.columns([1,2.3],gap='large')
-    with left:
-        st.subheader('絞り込み')
-        st.selectbox('プリセット',['3日間＋2000枚以上なし','高回転凹み','3台構成','ジャグ高回転','条件をクリア'],key='preset')
-        st.button('この条件を使う',on_click=lambda:set_preset(st.session_state.preset),use_container_width=True)
-        with st.expander('条件を変更',expanded=True):
-            st.multiselect('機種',sort_machines(df['機種名'].unique().tolist(),df),key='q_machines')
-            st.selectbox('ジャグラー',['すべて','ジャグのみ','ジャグ除外'],key='q_juggler')
-            st.selectbox('設置台数',['指定なし','3台','4台','8台','16台以上'],key='q_count')
-            st.checkbox('3日間＋2000枚以上なし',key='q_no2000')
-            st.checkbox('3日連続マイナス',key='q_negative')
-            st.checkbox('前日差枚の範囲',key='q_prev')
-            st.slider('前日差枚',-20000,20000,step=500,key='q_prev_range',disabled=not st.session_state.q_prev)
-            st.checkbox('期間合計の範囲',key='q_sum')
-            st.selectbox('合計日数',[3,7],key='q_sum_days')
-            st.slider('期間合計差枚',-100000,100000,step=1000,key='q_sum_range',disabled=not st.session_state.q_sum)
-            st.number_input('前日最低G',0,20000,step=500,key='q_min_g')
-            st.number_input('3日平均最低G',0,20000,step=500,key='q_avg_g')
-            st.number_input('連日最低G（0で解除）',0,20000,step=500,key='q_cont_g')
-            st.selectbox('連日の日数',[1,2,3,4,5,6,7],key='q_cont_days')
-            st.caption('期間条件は指定日数がすべて揃った台だけ。＋2000枚ちょうどは除外します。')
-    st.session_state.saved_filters = {k: st.session_state[k] for k in DEFAULT_FILTERS}
-    result,reasons=apply_filters(work)
-    with right:
+    st.subheader('おすすめ台')
+    st.caption('条件設定は不要。分類を選ぶだけで候補が出ます。全分類で各日＋1000枚以下、3日分の差枚が揃った台だけを表示します。')
+    st.radio('分類', CATEGORIES, index=CATEGORIES.index(st.session_state.selected_category),
+             key='category_picker', on_change=remember_category, horizontal=True)
+    st.session_state.selected_category = st.session_state.category_picker
+    result, reasons = apply_filters(work)
+    with st.container():
         st.subheader(f'候補 {len(result)}台')
         st.caption(' ／ '.join(reasons) or '条件指定なし：全台表示')
         sort=st.selectbox('並び替え',['3日差枚が低い順','平均Gが高い順','台番順','前日差枚が低い順'])
@@ -2015,9 +1983,9 @@ if st.session_state.screen=='台を探す':
     with st.expander('稼働ランキング・店全体の集計'):
         valid = work['前日差枚'].dropna()
         st.caption(f"プラス {(valid>0).sum()}台 · マイナス {(valid<0).sum()}台 · 平均 {diff_sign(valid.mean())}枚")
-        ranking = st.radio('ランキング',['前日高回転凹み','3日平均回転数'],horizontal=True)
-        ranked = work[(work['回転数']>=7000)&(work['前日差枚']<=1000)].sort_values('前日差枚') if ranking=='前日高回転凹み' else work.dropna(subset=['3日平均G']).sort_values('3日平均G',ascending=False)
-        st.caption('店舗全体のランキングです。上の候補の絞り込み条件は適用しません。')
+        ranking = st.radio('ランキング',['前日高回転・＋1000枚以下','3日平均回転数'],horizontal=True)
+        ranked = work[(work['回転数']>=7000)&(work['前日差枚']<=1000)].sort_values('前日差枚') if ranking=='前日高回転・＋1000枚以下' else work.dropna(subset=['3日平均G']).sort_values('3日平均G',ascending=False)
+        st.caption('店舗全体のランキングです。おすすめ分類の3日条件は適用しません。')
         st.dataframe(ranked[['台番','機種名','前日差枚','回転数','3日平均G']],hide_index=True,use_container_width=True)
 
 elif st.session_state.screen=='狙い台':
