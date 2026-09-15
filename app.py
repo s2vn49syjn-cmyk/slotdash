@@ -176,6 +176,34 @@ html, body, [class*="css"] {
 }
 
 hr { border-color: var(--border) !important; margin: 12px 0 !important; }
+
+[data-testid="stMainBlockContainer"] {max-width:1200px;padding-top:1.3rem;padding-bottom:3rem;}
+:root {--text3:#98a6ba;--accent:#3b82f6;}
+.app-header {padding:0 0 8px;margin:0;border:0;}
+.app-title {font-size:1.55rem;letter-spacing:2px;}
+.app-sub {color:#a8b5c8;font-size:.78rem;}
+.sum-cards {gap:8px;margin:8px 0 16px;}
+.sum-card {display:flex;align-items:center;justify-content:center;gap:10px;padding:8px 12px;}
+.sum-val {font-size:1.15rem;}.sum-label {font-size:.75rem;color:#a8b5c8;margin:0;}
+.sec-title {font-size:.9rem;letter-spacing:.5px;color:#e7edf6;padding-top:8px;}
+.rec-card {border:1px solid #2b3749;border-left:4px solid #ff9b3d;background:linear-gradient(120deg,#182130,#131a25);padding:16px;margin:8px 0 4px;border-radius:12px;}
+.rec-num {font-size:1.8rem;font-weight:700;color:#f4f7fc;line-height:1.15;}
+.rec-name {font-size:.95rem;color:#dce5f2;margin:6px 0 12px;}
+.rec-tag {font-size:.72rem;display:inline-block;margin:3px 4px 0 0;padding:4px 7px;border-radius:6px;}
+.card-stats {display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0;}
+.card-stat-label {font-size:.7rem;color:#a8b5c8;}.card-stat-value {font-size:1rem;font-weight:700;margin-top:3px;}
+.condition-pill {display:inline-block;border:1px solid #875127;background:#3b2a1b;color:#ffc38d;padding:6px 10px;border-radius:20px;font-size:.76rem;margin:4px 4px 8px 0;}
+.stButton button,.stDownloadButton button {min-height:42px;border-radius:9px;}
+button[data-baseweb="tab"] {font-size:.9rem;}
+button[data-baseweb="tab"][aria-selected="true"] {color:#6ba7ff;}
+[data-baseweb="tab-highlight"] {background-color:#3b82f6;}
+@media(max-width:700px){
+[data-testid="stMainBlockContainer"] {padding:1rem .7rem 2rem;}
+.sum-card {display:block;padding:8px 4px;}.sum-label {font-size:.65rem;}
+.rec-num {font-size:1.55rem;}.rec-name {font-size:.85rem;}
+[data-testid="stHorizontalBlock"] {flex-wrap:wrap;}
+[data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {min-width:min(100%,320px);}
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1766,13 +1794,6 @@ if "table_labels" not in st.session_state: st.session_state.table_labels = {}
 # ─────────────────────────────────────────────
 # ヘッダー
 # ─────────────────────────────────────────────
-st.markdown('''<div class="app-header">
-  <div>
-    <div class="app-title">🎰 SLOTDASH</div>
-    <div class="app-sub">スーパーコスモ堺 専用ダッシュボード</div>
-  </div>
-</div>''', unsafe_allow_html=True)
-
 # データ読み込み
 try:
     df, today_date = load_today()
@@ -1797,10 +1818,24 @@ if df is not None and not sorted_dates:
     except Exception as _e3:
         st.error(f"⚠️ シート一覧の取得も失敗: {_e3}")
 
-if df is not None:
-    st.markdown(f'<div style="font-size:0.68rem;color:#475569;margin-bottom:8px;">最終データ: {today_date} | 全{len(df)}台</div>', unsafe_allow_html=True)
-else:
-    st.warning("データが読み込めていません。Google Sheetsの接続を確認してください。")
+header_main, header_action = st.columns([5, 1])
+with header_main:
+    st.markdown('<div class="app-header"><div><div class="app-title">🎰 SLOTDASH</div>'
+                f'<div class="app-sub">スーパーコスモ堺 · データ {today_date or "未取得"} · {len(df) if df is not None else 0}台</div>'
+                '</div></div>', unsafe_allow_html=True)
+with header_action:
+    if st.button("↻ 更新", key="reload_all", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+def toggle_target(num):
+    targets = []
+    for token in re.split(r"[,、\s]+", st.session_state.get("island_targets", "")):
+        if token.isdigit() and int(token) not in targets:
+            targets.append(int(token))
+    if num in targets: targets.remove(num)
+    else: targets.append(num)
+    st.session_state["island_targets"] = ",".join(map(str, targets))
 
 # ─────────────────────────────────────────────
 # タブ
@@ -1815,11 +1850,6 @@ tab_dash, tab_island, tab_all, tab_kouryaku = st.tabs([
 recommended_numbers = set()
 filtered_numbers = set()
 with tab_dash:
-    # 手動再読込（キャッシュクリア）
-    if st.button("🔄 データ再読込", key="reload_all"):
-        st.cache_data.clear()
-        st.rerun()
-
     if df is None or not isinstance(df, pd.DataFrame) or df.empty or "前日差枚" not in df.columns:
         st.info("データ読み込み中... しばらくお待ちください。")
         if df is not None and isinstance(df, pd.DataFrame):
@@ -1871,96 +1901,6 @@ with tab_dash:
         else:
             summary_df = pd.DataFrame()
 
-        # ── 高回転凹み台（前日） ──
-        st.markdown('<div class="sec-title">⚡ 高回転凹み台（前日 7000G以上×1000枚以下）</div>', unsafe_allow_html=True)
-        if df is not None and not df.empty:
-            hot_cond = (df["回転数"] >= 7000) & (df["前日差枚"] <= 1000)
-            hot_df = df[hot_cond].sort_values("前日差枚").copy()
-            if hot_df.empty:
-                st.info("該当台なし")
-            else:
-                disp_hot = pd.DataFrame({
-                    "台番": hot_df["台番"].astype(int),
-                    "機種": hot_df["機種名"].apply(shorten_name),
-                    "前日差枚": hot_df["前日差枚"].apply(diff_sign),
-                    "回転数": hot_df["回転数"].apply(lambda x: f"{int(x):,}G"),
-                })
-                st.markdown(f'<div style="font-size:0.68rem;color:#94a3b8;margin-bottom:6px;">{len(hot_df)}台 該当（差枚が低い順）</div>', unsafe_allow_html=True)
-                st.dataframe(disp_hot, hide_index=True, use_container_width=True, height=400)
-        else:
-            st.info("前日データがありません")
-
-        # ── 平均回転数ランキング ──
-        st.markdown('<div class="sec-title">🔄 平均回転数ランキング（直近3日）</div>', unsafe_allow_html=True)
-
-        # 除外機種の選択
-        exclude_machines = st.multiselect(
-            "除外する機種",
-            options=sort_machines(df["機種名"].dropna().unique().tolist(), df),
-            default=[],
-            key="rot_exclude",
-            placeholder="除外なし"
-        )
-
-        if history and len(sorted_dates) >= 1:
-            rot_data = []
-            for _, row in df.iterrows():
-                if np.isnan(row["台番"]): continue
-                if row["機種名"] in exclude_machines: continue
-                num = int(row["台番"])
-                mh = history.get(num, {})
-                dates = sorted(mh.keys(), reverse=True)[:3]
-                rots = [mh[d].get("rot", np.nan) for d in dates]
-                valid_rots = [r for r in rots if not np.isnan(r)]
-                if len(valid_rots) == 0: continue
-                avg_rot = np.mean(valid_rots)
-                rot_data.append({
-                    "台番": num,
-                    "機種名": row["機種名"],
-                    "平均G数": int(avg_rot),
-                    "前日差枚": row["前日差枚"],
-                    "日数": len(valid_rots),
-                })
-
-            if rot_data:
-                rot_df = pd.DataFrame(rot_data).sort_values("平均G数", ascending=False)
-
-                # 表示件数選択
-                top_n = st.slider("表示件数", 10, 50, 20, 5, key="rot_rank_n")
-
-                # テーブル表示
-                disp_rot = rot_df.head(top_n).copy()
-                disp_rot["機種"] = disp_rot["機種名"].apply(shorten_name)
-                disp_rot["平均G"] = disp_rot["平均G数"].apply(lambda x: f"{x:,}G")
-                disp_rot["前日"] = disp_rot["前日差枚"].apply(diff_sign)
-                disp_rot["N日"] = disp_rot["日数"].apply(lambda x: f"{x}日")
-                st.dataframe(
-                    disp_rot[["台番","機種","平均G","前日","N日"]],
-                    hide_index=True, use_container_width=True, height=400
-                )
-
-                # TOP3をカード表示
-                st.markdown('<div style="font-size:0.72rem;color:#94a3b8;margin:6px 0 4px;">🏆 TOP3</div>', unsafe_allow_html=True)
-                top3_cols = st.columns(3)
-                medals = ["🥇", "🥈", "🥉"]
-                for i, (_, r) in enumerate(rot_df.head(3).iterrows()):
-                    diff = r["前日差枚"]
-                    dc = "#22c55e" if not np.isnan(diff) and diff >= 0 else "#ef4444"
-                    with top3_cols[i]:
-                        st.markdown(
-                            f'<div style="background:#141820;border:1px solid #252d3d;border-radius:8px;padding:8px;text-align:center;">' +
-                            f'<div style="font-size:1rem;">{medals[i]}</div>' +
-                            f'<div style="font-family:Rajdhani,sans-serif;font-size:1.1rem;font-weight:700;color:#3b82f6;">{int(r["平均G数"]):,}G</div>' +
-                            f'<div style="font-size:0.7rem;color:#94a3b8;">台番{int(r["台番"])}</div>' +
-                            f'<div style="font-size:0.68rem;color:#475569;">{shorten_name(r["機種名"])}</div>' +
-                            f'<div style="font-size:0.75rem;color:{dc};">{diff_sign(diff)}</div></div>',
-                            unsafe_allow_html=True
-                        )
-            else:
-                st.info("履歴データが不足しています")
-        else:
-            st.info("3日分の履歴が必要です")
-
         # ── おすすめ台 ──
         st.markdown('<div class="sec-title">⭐ おすすめ台</div>', unsafe_allow_html=True)
 
@@ -1976,129 +1916,144 @@ with tab_dash:
             ds = [d for d in sorted_dates[:n] if d in mh]
             return [mh[d].get("rot", np.nan) for d in ds]
 
+        card_counter = [0]
         def rec_card(row, tags, tag_color="#3b82f6"):
+            import html
+            num = int(row["台番"])
+            recommended_numbers.add(num)
+            card_counter[0] += 1
+            diffs = get_diffs(num, 3)
+            rots = [v for v in get_rots(num, 3) if pd.notna(v)]
+            sum3 = diff_sign(sum(diffs)) if len(diffs) == 3 else "不足"
+            avg_g = f"{int(np.mean(rots)):,}G" if rots else "—"
             diff = row["前日差枚"]
-            if pd.notna(row["台番"]): recommended_numbers.add(int(row["台番"]))
-            num = int(row["台番"]) if not np.isnan(row["台番"]) else "?"
-            dc = "#22c55e" if not np.isnan(diff) and diff >= 0 else "#ef4444"
-            tag_html = "".join([f'<span class="rec-tag" style="background:{tag_color}22;color:{tag_color};border:1px solid {tag_color}44;">{t}</span>' for t in tags])
-            st.markdown(f'''<div class="rec-card" style="border-left-color:{tag_color};">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-                <div>
-                  <div class="rec-num">台番 {num}</div>
-                  <div class="rec-name">{row["機種名"]}</div>
-                  <div>{tag_html}</div>
-                </div>
-                <div style="font-family:Rajdhani,sans-serif;font-size:1.3rem;font-weight:700;color:{dc};">{diff_sign(diff)}</div>
-              </div>
-            </div>''', unsafe_allow_html=True)
+            dc = "#22c55e" if pd.notna(diff) and diff >= 0 else "#f87171"
+            tag_html = "".join(f'<span class="rec-tag" style="background:#283343;color:#cbd7e8;">{html.escape(str(t))}</span>' for t in tags)
+            st.markdown(f'''<div class="rec-card">
+              <div class="rec-num">{num}<span style="font-size:.75rem;color:#9aaabe;margin-left:6px;">番台</span></div>
+              <div class="rec-name">{html.escape(str(row["機種名"]))}</div>
+              <div class="card-stats">
+                <div><div class="card-stat-label">前日差枚</div><div class="card-stat-value" style="color:{dc}">{diff_sign(diff)}</div></div>
+                <div><div class="card-stat-label">3日合計</div><div class="card-stat-value">{sum3}</div></div>
+                <div><div class="card-stat-label">平均回転数</div><div class="card-stat-value">{avg_g}</div></div>
+              </div>{tag_html}</div>''', unsafe_allow_html=True)
+            saved = str(num) in re.split(r"[,、\s]+", st.session_state.get("island_targets", ""))
+            st.button("★ 狙い台から外す" if saved else "☆ 狙い台に追加", key=f"pick_{num}_{card_counter[0]}",
+                      on_click=toggle_target, args=(num,), use_container_width=True)
 
-        # 機種フィルタ
-        all_mlist = sort_machines(df["機種名"].dropna().unique().tolist(), df)
-        sel_machines = st.multiselect("機種フィルタ", all_mlist, default=[], key="dash_mfilter", placeholder="全機種")
-        df_t = df[df["機種名"].isin(sel_machines)] if sel_machines else df.copy()
-        rec_no2000 = st.checkbox("直近3日で＋2000枚以上の日がない", value=True, key="rec_no2000")
-        st.caption("各日＋2000枚未満が対象。＋2000枚ちょうど・3日分の差枚欠損は除外。狙い台フィルタにも適用します。")
-        if rec_no2000:
-            df_t = df_t[df_t["台番"].apply(lambda n: no_large_plus_in_three_days(n, history, sorted_dates))]
-            if len(sorted_dates) < 3:
-                st.info("3日分の履歴が必要です。条件に合う台は表示しません。")
+        condition_col, result_col = st.columns([1, 2.2], gap="large")
+        with condition_col:
+            st.markdown("#### 絞り込み")
+            # 機種フィルタ
+            all_mlist = sort_machines(df["機種名"].dropna().unique().tolist(), df)
+            sel_machines = st.multiselect("機種フィルタ", all_mlist, default=[], key="dash_mfilter", placeholder="全機種")
+            df_t = df[df["機種名"].isin(sel_machines)] if sel_machines else df.copy()
+            rec_no2000 = st.checkbox("直近3日で＋2000枚以上の日がない", value=True, key="rec_no2000")
+            st.caption("各日＋2000枚未満が対象。＋2000枚ちょうど・3日分の差枚欠損は除外。狙い台フィルタにも適用します。")
+            if rec_no2000:
+                df_t = df_t[df_t["台番"].apply(lambda n: no_large_plus_in_three_days(n, history, sorted_dates))]
+                if len(sorted_dates) < 3:
+                    st.info("3日分の履歴が必要です。条件に合う台は表示しません。")
 
 
-        if not summary_df.empty:
-            df_t_sum = summary_df[summary_df["機種名"].isin(sel_machines)] if sel_machines else summary_df.copy()
-        else:
-            df_t_sum = pd.DataFrame()
-
-        # 機種ごとの設置台数を計算
-        machine_counts = df["機種名"].value_counts().to_dict()
-
-        def get_machines_by_count(target_count, exact=True):
-            """設置台数がtarget_countの機種名リストを返す"""
-            if exact:
-                return [m for m, c in machine_counts.items() if c == target_count]
+            st.markdown('<span class="condition-pill">3日間 ＋2000枚以上なし</span>' if rec_no2000 else '<span class="condition-pill">差枚条件なし</span>', unsafe_allow_html=True)
+            st.caption(f"機種・差枚条件の対象：{len(df_t)}台")
+            st.caption("カードの☆で狙い台に追加。島図のピンク枠に登録順で反映します。")
+        with result_col:
+            if not summary_df.empty:
+                df_t_sum = summary_df[summary_df["機種名"].isin(sel_machines)] if sel_machines else summary_df.copy()
             else:
-                return [m for m, c in machine_counts.items() if c >= target_count]
+                df_t_sum = pd.DataFrame()
 
-        def show_machine_group(count, exact=True, label=""):
-            """指定台数構成の機種の直近3日差枚を悪い順に表示"""
-            machines = get_machines_by_count(count, exact)
-            if not machines:
-                st.info(f"{label}の機種がありません")
-                return
-            # 対象台の直近3日差枚を計算
-            rows = []
-            for _, row in df_t.iterrows():
-                if np.isnan(row["台番"]): continue
-                if row["機種名"] not in machines: continue
-                diffs = get_diffs(int(row["台番"]), 3)
-                sum3 = sum(diffs) if diffs else np.nan
-                rows.append((sum3, row))
-            # 悪い順（差枚小さい順）
-            rows = [r for r in rows if not (isinstance(r[0], float) and np.isnan(r[0]))]
-            rows.sort(key=lambda x: x[0])
-            if not rows:
-                st.info("該当データなし")
-                return
-            st.markdown(f'<div style="font-size:0.65rem;color:#475569;margin-bottom:6px;">対象機種: {", ".join(shorten_name(m) for m in machines[:8])}{"..." if len(machines)>8 else ""}</div>', unsafe_allow_html=True)
-            for sum3, row in rows[:12]:
-                rec_card(row, [f"3日計 {int(sum3):+,}"], "#ef4444" if sum3 < 0 else "#22c55e")
+            # 機種ごとの設置台数を計算
+            machine_counts = df["機種名"].value_counts().to_dict()
 
-        rec_tabs = st.tabs(["❄️ 3日連続凹×高回転", "🎯 3台構成", "🎯 4台構成", "🎯 8台構成", "🎯 16台↑", "🎰 ジャグ高回転"])
+            def get_machines_by_count(target_count, exact=True):
+                """設置台数がtarget_countの機種名リストを返す"""
+                if exact:
+                    return [m for m, c in machine_counts.items() if c == target_count]
+                else:
+                    return [m for m, c in machine_counts.items() if c >= target_count]
 
-        with rec_tabs[0]:
-            st.markdown('<div style="font-size:0.68rem;color:#94a3b8;margin-bottom:8px;">3日連続2000枚以下 × 平均6000G以上</div>', unsafe_allow_html=True)
-            found = False
-            cand = []
-            for _, row in df_t.iterrows():
-                if np.isnan(row["台番"]): continue
-                diffs = get_diffs(int(row["台番"]), 3)
-                rots = [r for r in get_rots(int(row["台番"]), 3) if not np.isnan(r)]
-                # 3日連続で2000枚以下（マイナス〜微プラス含む）かつ平均6000G以上
-                if len(diffs) >= 3 and all(d <= 2000 for d in diffs) and rots and np.mean(rots) >= 6000:
-                    sum3 = sum(diffs)
-                    cand.append((sum3, row, np.mean(rots)))
-            cand.sort(key=lambda x: x[0])
-            for sum3, row, avgr in cand[:12]:
-                rec_card(row, [f"3日計{int(sum3):+,}", f"avg{int(avgr):,}G"], "#ef4444")
-                found = True
-            if not found: st.info("該当台なし")
-
-        with rec_tabs[1]:
-            st.markdown('<div style="font-size:0.68rem;color:#94a3b8;margin-bottom:8px;">3台構成の機種・直近3日差枚が悪い順</div>', unsafe_allow_html=True)
-            show_machine_group(3, exact=True, label="3台構成")
-
-        with rec_tabs[2]:
-            st.markdown('<div style="font-size:0.68rem;color:#94a3b8;margin-bottom:8px;">4台構成の機種・直近3日差枚が悪い順</div>', unsafe_allow_html=True)
-            show_machine_group(4, exact=True, label="4台構成")
-
-        with rec_tabs[3]:
-            st.markdown('<div style="font-size:0.68rem;color:#94a3b8;margin-bottom:8px;">8台構成の機種・直近3日差枚が悪い順</div>', unsafe_allow_html=True)
-            show_machine_group(8, exact=True, label="8台構成")
-
-        with rec_tabs[4]:
-            st.markdown('<div style="font-size:0.68rem;color:#94a3b8;margin-bottom:8px;">16台以上の機種・直近3日差枚が悪い順</div>', unsafe_allow_html=True)
-            show_machine_group(16, exact=False, label="16台以上")
-
-        with rec_tabs[5]:
-            st.markdown('<div style="font-size:0.68rem;color:#94a3b8;margin-bottom:8px;">ジャグラー・直近3日連続6000G以上（連日高回転）</div>', unsafe_allow_html=True)
-            found = False
-            df_jug = df_t[df_t["is_juggler"] == True]
-            cand = []
-            for _, row in df_jug.iterrows():
-                if np.isnan(row["台番"]): continue
-                rots = get_rots(int(row["台番"]), 3)
-                valid_r = [r for r in rots if not np.isnan(r)]
-                # 直近3日すべて6000G以上
-                if len(valid_r) >= 3 and all(r >= 6000 for r in valid_r):
+            def show_machine_group(count, exact=True, label=""):
+                """指定台数構成の機種の直近3日差枚を悪い順に表示"""
+                machines = get_machines_by_count(count, exact)
+                if not machines:
+                    st.info(f"{label}の機種がありません")
+                    return
+                # 対象台の直近3日差枚を計算
+                rows = []
+                for _, row in df_t.iterrows():
+                    if np.isnan(row["台番"]): continue
+                    if row["機種名"] not in machines: continue
                     diffs = get_diffs(int(row["台番"]), 3)
-                    sum3 = sum(diffs) if diffs else 0
-                    cand.append((np.mean(valid_r), sum3, row))
-            cand.sort(key=lambda x: -x[0])  # 回転数多い順
-            for avgr, sum3, row in cand[:12]:
-                rec_card(row, [f"avg{int(avgr):,}G", f"3日計{int(sum3):+,}"], "#06b6d4")
-                found = True
-            if not found: st.info("該当台なし")
+                    sum3 = sum(diffs) if diffs else np.nan
+                    rows.append((sum3, row))
+                # 悪い順（差枚小さい順）
+                rows = [r for r in rows if not (isinstance(r[0], float) and np.isnan(r[0]))]
+                rows.sort(key=lambda x: x[0])
+                if not rows:
+                    st.info("該当データなし")
+                    return
+                st.markdown(f'<div style="font-size:0.65rem;color:#475569;margin-bottom:6px;">対象機種: {", ".join(shorten_name(m) for m in machines[:8])}{"..." if len(machines)>8 else ""}</div>', unsafe_allow_html=True)
+                for sum3, row in rows[:12]:
+                    rec_card(row, [f"3日計 {int(sum3):+,}"], "#ef4444" if sum3 < 0 else "#22c55e")
+
+            rec_tabs = st.tabs(["高稼働", "3台", "4台", "8台", "16台↑", "ジャグ"])
+
+            with rec_tabs[0]:
+                st.markdown('<div style="font-size:0.68rem;color:#94a3b8;margin-bottom:8px;">3日連続2000枚以下 × 平均6000G以上</div>', unsafe_allow_html=True)
+                found = False
+                cand = []
+                for _, row in df_t.iterrows():
+                    if np.isnan(row["台番"]): continue
+                    diffs = get_diffs(int(row["台番"]), 3)
+                    rots = [r for r in get_rots(int(row["台番"]), 3) if not np.isnan(r)]
+                    # 3日連続で2000枚以下（マイナス〜微プラス含む）かつ平均6000G以上
+                    if len(diffs) >= 3 and all(d <= 2000 for d in diffs) and rots and np.mean(rots) >= 6000:
+                        sum3 = sum(diffs)
+                        cand.append((sum3, row, np.mean(rots)))
+                cand.sort(key=lambda x: x[0])
+                for sum3, row, avgr in cand[:12]:
+                    rec_card(row, [f"3日計{int(sum3):+,}", f"avg{int(avgr):,}G"], "#ef4444")
+                    found = True
+                if not found: st.info("該当台なし")
+
+            with rec_tabs[1]:
+                st.markdown('<div style="font-size:0.68rem;color:#94a3b8;margin-bottom:8px;">3台構成の機種・直近3日差枚が悪い順</div>', unsafe_allow_html=True)
+                show_machine_group(3, exact=True, label="3台構成")
+
+            with rec_tabs[2]:
+                st.markdown('<div style="font-size:0.68rem;color:#94a3b8;margin-bottom:8px;">4台構成の機種・直近3日差枚が悪い順</div>', unsafe_allow_html=True)
+                show_machine_group(4, exact=True, label="4台構成")
+
+            with rec_tabs[3]:
+                st.markdown('<div style="font-size:0.68rem;color:#94a3b8;margin-bottom:8px;">8台構成の機種・直近3日差枚が悪い順</div>', unsafe_allow_html=True)
+                show_machine_group(8, exact=True, label="8台構成")
+
+            with rec_tabs[4]:
+                st.markdown('<div style="font-size:0.68rem;color:#94a3b8;margin-bottom:8px;">16台以上の機種・直近3日差枚が悪い順</div>', unsafe_allow_html=True)
+                show_machine_group(16, exact=False, label="16台以上")
+
+            with rec_tabs[5]:
+                st.markdown('<div style="font-size:0.68rem;color:#94a3b8;margin-bottom:8px;">ジャグラー・直近3日連続6000G以上（連日高回転）</div>', unsafe_allow_html=True)
+                found = False
+                df_jug = df_t[df_t["is_juggler"] == True]
+                cand = []
+                for _, row in df_jug.iterrows():
+                    if np.isnan(row["台番"]): continue
+                    rots = get_rots(int(row["台番"]), 3)
+                    valid_r = [r for r in rots if not np.isnan(r)]
+                    # 直近3日すべて6000G以上
+                    if len(valid_r) >= 3 and all(r >= 6000 for r in valid_r):
+                        diffs = get_diffs(int(row["台番"]), 3)
+                        sum3 = sum(diffs) if diffs else 0
+                        cand.append((np.mean(valid_r), sum3, row))
+                cand.sort(key=lambda x: -x[0])  # 回転数多い順
+                for avgr, sum3, row in cand[:12]:
+                    rec_card(row, [f"avg{int(avgr):,}G", f"3日計{int(sum3):+,}"], "#06b6d4")
+                    found = True
+                if not found: st.info("該当台なし")
 
         recommendation_cards = set(recommended_numbers)
 
@@ -2204,6 +2159,97 @@ with tab_dash:
         if active:
             for _, row in df_disp.head(30).iterrows():
                 rec_card(row, [f"{shorten_name(row['機種名'])}"], "#3b82f6")
+
+        with st.expander("📊 稼働ランキングを見る", expanded=False):
+            # ── 高回転凹み台（前日） ──
+            st.markdown('<div class="sec-title">⚡ 高回転凹み台（前日 7000G以上×1000枚以下）</div>', unsafe_allow_html=True)
+            if df is not None and not df.empty:
+                hot_cond = (df["回転数"] >= 7000) & (df["前日差枚"] <= 1000)
+                hot_df = df[hot_cond].sort_values("前日差枚").copy()
+                if hot_df.empty:
+                    st.info("該当台なし")
+                else:
+                    disp_hot = pd.DataFrame({
+                        "台番": hot_df["台番"].astype(int),
+                        "機種": hot_df["機種名"].apply(shorten_name),
+                        "前日差枚": hot_df["前日差枚"].apply(diff_sign),
+                        "回転数": hot_df["回転数"].apply(lambda x: f"{int(x):,}G"),
+                    })
+                    st.markdown(f'<div style="font-size:0.68rem;color:#94a3b8;margin-bottom:6px;">{len(hot_df)}台 該当（差枚が低い順）</div>', unsafe_allow_html=True)
+                    st.dataframe(disp_hot, hide_index=True, use_container_width=True, height=400)
+            else:
+                st.info("前日データがありません")
+
+            # ── 平均回転数ランキング ──
+            st.markdown('<div class="sec-title">🔄 平均回転数ランキング（直近3日）</div>', unsafe_allow_html=True)
+
+            # 除外機種の選択
+            exclude_machines = st.multiselect(
+                "除外する機種",
+                options=sort_machines(df["機種名"].dropna().unique().tolist(), df),
+                default=[],
+                key="rot_exclude",
+                placeholder="除外なし"
+            )
+
+            if history and len(sorted_dates) >= 1:
+                rot_data = []
+                for _, row in df.iterrows():
+                    if np.isnan(row["台番"]): continue
+                    if row["機種名"] in exclude_machines: continue
+                    num = int(row["台番"])
+                    mh = history.get(num, {})
+                    dates = sorted(mh.keys(), reverse=True)[:3]
+                    rots = [mh[d].get("rot", np.nan) for d in dates]
+                    valid_rots = [r for r in rots if not np.isnan(r)]
+                    if len(valid_rots) == 0: continue
+                    avg_rot = np.mean(valid_rots)
+                    rot_data.append({
+                        "台番": num,
+                        "機種名": row["機種名"],
+                        "平均G数": int(avg_rot),
+                        "前日差枚": row["前日差枚"],
+                        "日数": len(valid_rots),
+                    })
+
+                if rot_data:
+                    rot_df = pd.DataFrame(rot_data).sort_values("平均G数", ascending=False)
+
+                    # 表示件数選択
+                    top_n = st.slider("表示件数", 10, 50, 20, 5, key="rot_rank_n")
+
+                    # テーブル表示
+                    disp_rot = rot_df.head(top_n).copy()
+                    disp_rot["機種"] = disp_rot["機種名"].apply(shorten_name)
+                    disp_rot["平均G"] = disp_rot["平均G数"].apply(lambda x: f"{x:,}G")
+                    disp_rot["前日"] = disp_rot["前日差枚"].apply(diff_sign)
+                    disp_rot["N日"] = disp_rot["日数"].apply(lambda x: f"{x}日")
+                    st.dataframe(
+                        disp_rot[["台番","機種","平均G","前日","N日"]],
+                        hide_index=True, use_container_width=True, height=400
+                    )
+
+                    # TOP3をカード表示
+                    st.markdown('<div style="font-size:0.72rem;color:#94a3b8;margin:6px 0 4px;">🏆 TOP3</div>', unsafe_allow_html=True)
+                    top3_cols = st.columns(3)
+                    medals = ["🥇", "🥈", "🥉"]
+                    for i, (_, r) in enumerate(rot_df.head(3).iterrows()):
+                        diff = r["前日差枚"]
+                        dc = "#22c55e" if not np.isnan(diff) and diff >= 0 else "#ef4444"
+                        with top3_cols[i]:
+                            st.markdown(
+                                f'<div style="background:#141820;border:1px solid #252d3d;border-radius:8px;padding:8px;text-align:center;">' +
+                                f'<div style="font-size:1rem;">{medals[i]}</div>' +
+                                f'<div style="font-family:Rajdhani,sans-serif;font-size:1.1rem;font-weight:700;color:#3b82f6;">{int(r["平均G数"]):,}G</div>' +
+                                f'<div style="font-size:0.7rem;color:#94a3b8;">台番{int(r["台番"])}</div>' +
+                                f'<div style="font-size:0.68rem;color:#475569;">{shorten_name(r["機種名"])}</div>' +
+                                f'<div style="font-size:0.75rem;color:{dc};">{diff_sign(diff)}</div></div>',
+                                unsafe_allow_html=True
+                            )
+                else:
+                    st.info("履歴データが不足しています")
+            else:
+                st.info("3日分の履歴が必要です")
 
         recommended_numbers = recommendation_cards
 
