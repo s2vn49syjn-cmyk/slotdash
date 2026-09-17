@@ -479,36 +479,33 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
 
     for num, (rx, ry) in PDF_POSITIONS.items():
         diff = diff_map.get(num)
-        if diff is None or (isinstance(diff, float) and np.isnan(diff)):
-            continue
-        diff = float(diff)
-
-        # PDF_POSITIONSの座標をそのまま使用
         px = int(rx * W)
         py = int(ry * H)
+        # 数値が欠損・非表示でも機種名は描画する。
+        if diff is not None and pd.notna(diff) and np.isfinite(diff):
+            diff = float(diff)
+            color = get_color(diff)
+            outline_c = get_outline_color(diff)
 
-        color = get_color(diff)
-        outline_c = get_outline_color(diff)
+            # 差枚バッジ（台番の上にずらして台番が見えるように）
+            SHIFT = 18  # 上にずらすピクセル数
+            x0, y0 = px - BW//2, py - BH//2 - SHIFT
+            x1, y1 = px + BW//2, py + BH//2 - SHIFT
+            draw.rectangle([x0, y0, x1, y1], fill=color)
+            draw.rectangle([x0, y0, x1, y1], outline=outline_c, width=1)
 
-        # 差枚バッジ（台番の上にずらして台番が見えるように）
-        SHIFT = 18  # 上にずらすピクセル数
-        x0, y0 = px - BW//2, py - BH//2 - SHIFT
-        x1, y1 = px + BW//2, py + BH//2 - SHIFT
-        draw.rectangle([x0, y0, x1, y1], fill=color)
-        draw.rectangle([x0, y0, x1, y1], outline=outline_c, width=1)
-
-        if mode == "rot":
-            text = f"{int(diff):,}"
-        else:
-            text = f"+{int(diff):,}" if diff > 0 else ("0" if diff == 0 else f"{int(diff):,}")
-        text_color = get_text_color(diff)
-        try:
-            bbox = draw.textbbox((0, 0), text, font=font)
-            tw = bbox[2] - bbox[0]
-            th = bbox[3] - bbox[1]
-        except:
-            tw, th = len(text) * 9, FONT_SIZE
-        draw.text((px - tw//2, py - th//2 - SHIFT), text, fill=text_color, font=font)
+            if mode == "rot":
+                text = f"{int(diff):,}"
+            else:
+                text = f"+{int(diff):,}" if diff > 0 else ("0" if diff == 0 else f"{int(diff):,}")
+            text_color = get_text_color(diff)
+            try:
+                bbox = draw.textbbox((0, 0), text, font=font)
+                tw = bbox[2] - bbox[0]
+                th = bbox[3] - bbox[1]
+            except:
+                tw, th = len(text) * 9, FONT_SIZE
+            draw.text((px - tw//2, py - th//2 - SHIFT), text, fill=text_color, font=font)
 
         # 機種名（バッジの下）
         machine = machine_map.get(num, "")
@@ -2037,7 +2034,12 @@ elif st.session_state.screen=='島図':
     recs=tuple(sorted(result['台番'].astype(int))) if show_rec else ()
     missing=(set(targets)|set(recs))-set(PDF_POSITIONS)
     if missing:st.warning('座標のない台：'+', '.join(map(str,sorted(missing))))
-    args=dict(diff_map_tuple=tuple(sorted(dm.items())),machine_map_tuple=(),date_key=str(today_date),mode=field,
+    machine_names = tuple(sorted(
+        (int(row['台番']), str(row['機種名']).strip())
+        for _, row in work.iterrows()
+        if pd.notna(row['台番']) and pd.notna(row['機種名'])
+    ))
+    args=dict(diff_map_tuple=tuple(sorted(dm.items())),machine_map_tuple=machine_names,date_key=str(today_date),mode=field,
         caption=f'{today_date} / {period} / {mode}',targets=targets,recommendations=recs)
     # Existing renderer expects "rot" or "diff".
     png=generate_island_image(**args)
