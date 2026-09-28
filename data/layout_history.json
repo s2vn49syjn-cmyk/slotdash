@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "defaultLayout": {
+    "id": "current",
+    "label": "現行島図",
+    "positionsFile": null,
+    "backgroundFile": null
+  },
+  "layouts": []
+}
