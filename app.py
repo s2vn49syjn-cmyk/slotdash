@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import re, json
+from pathlib import Path
 from datetime import datetime, timedelta
 import gspread
 from google.oauth2.service_account import Credentials
@@ -20,6 +21,73 @@ st.set_page_config(
 
 SPREADSHEET_ID = "1Hak9Q7Q_kjbp22A59pAUJ2twrEy4mdXk1sBfLYlynR8"
 JUGGLER_KEYWORDS = ["ジャグラー", "juggler", "JUGGLER"]
+
+APP_ROOT = Path(__file__).resolve().parent
+LAYOUT_HISTORY_FILE = APP_ROOT / "data" / "layout_history.json"
+
+@st.cache_data(show_spinner=False)
+def load_layout_history_manifest():
+    """日付ごとの島図バージョン定義を読み込む。未登録時は現行島図へ安全にフォールバック。"""
+    if not LAYOUT_HISTORY_FILE.exists():
+        return {"schemaVersion": 1, "defaultLayout": {"id": "current", "label": "現行島図"}, "layouts": []}
+    try:
+        with LAYOUT_HISTORY_FILE.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError("layout history manifest must be an object")
+        return data
+    except Exception:
+        return {"schemaVersion": 1, "defaultLayout": {"id": "current", "label": "現行島図"}, "layouts": []}
+
+def _safe_app_path(relative_path):
+    if not relative_path:
+        return None
+    path = (APP_ROOT / str(relative_path)).resolve()
+    if path != APP_ROOT and APP_ROOT not in path.parents:
+        raise ValueError("layout history path must stay inside app directory")
+    return path
+
+def resolve_layout_for_date(date_key):
+    """YYYY-MM-DD に有効な島図バージョンを返す。専用履歴がなければ現行版をfallbackとして返す。"""
+    manifest = load_layout_history_manifest()
+    selected = None
+    for item in manifest.get("layouts", []):
+        if not isinstance(item, dict):
+            continue
+        start = item.get("effectiveFrom")
+        end = item.get("effectiveTo")
+        if start and str(date_key) < str(start):
+            continue
+        if end and str(date_key) > str(end):
+            continue
+        selected = dict(item)
+        break
+    if selected is None:
+        selected = dict(manifest.get("defaultLayout") or {"id": "current", "label": "現行島図"})
+        selected["_fallback"] = True
+    else:
+        selected["_fallback"] = False
+    return selected
+
+@st.cache_data(show_spinner=False)
+def load_layout_positions(positions_file):
+    if not positions_file:
+        return None
+    path = _safe_app_path(positions_file)
+    if not path or not path.exists():
+        return None
+    with path.open("r", encoding="utf-8") as f:
+        raw = json.load(f)
+    if isinstance(raw, dict) and "positions" in raw:
+        raw = raw["positions"]
+    if not isinstance(raw, dict):
+        raise ValueError("positions file must contain an object")
+    result = {}
+    for key, value in raw.items():
+        if not isinstance(value, (list, tuple)) or len(value) < 2:
+            continue
+        result[int(key)] = (float(value[0]), float(value[1]))
+    return result
 
 # ─────────────────────────────────────────────
 # スタイル
@@ -380,23 +448,28 @@ KISHU_LINKS = [
 # ─────────────────────────────────────────────
 # 背景画像をキャッシュ（デコードは一度だけ）
 @st.cache_data
-def _load_bg_image():
+def _load_bg_image(background_file=""):
     from PIL import Image
     import io, base64
+    if background_file:
+        path = _safe_app_path(background_file)
+        if path and path.exists():
+            return Image.open(path).convert("RGB")
     img_data = base64.b64decode(PDF_BG_IMAGE)
     return Image.open(io.BytesIO(img_data)).convert("RGB")
 
 @st.cache_data(show_spinner=False)
-def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_pdf=False, mode="diff", caption="", targets=(), recommendations=()):
+def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_pdf=False, mode="diff", caption="", targets=(), recommendations=(), positions_tuple=(), background_file=""):
     """PILで高速に差枚+機種名オーバーレイ画像を生成（キャッシュ付き）"""
     from PIL import Image, ImageDraw, ImageFont
     import io
 
     diff_map = dict(diff_map_tuple)
     machine_map = dict(machine_map_tuple)
+    positions = dict(positions_tuple) if positions_tuple else PDF_POSITIONS
 
-    # 背景をコピー
-    bg = _load_bg_image().copy()
+    # 日付に対応した背景を使用。未登録なら埋め込み済み現行背景へfallback。
+    bg = _load_bg_image(background_file).copy()
     W, H = bg.size
     draw = ImageDraw.Draw(bg)
 
@@ -477,7 +550,7 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
         draw.rectangle([10, 8, 620, 52], fill=(255, 255, 255))
         draw.text((18, 14), caption, fill=(0, 0, 0), font=cap_font)
 
-    for num, (rx, ry) in PDF_POSITIONS.items():
+    for num, (rx, ry) in positions.items():
         diff = diff_map.get(num)
         px = int(rx * W)
         py = int(ry * H)
@@ -527,9 +600,9 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
     # おすすめ枠と星（フォントに依存しない五角星）
     import math
     for num in recommendations:
-        if num not in PDF_POSITIONS:
+        if num not in positions:
             continue
-        rx, ry = PDF_POSITIONS[num]
+        rx, ry = positions[num]
         px, py = int(rx * W), int(ry * H)
         orange = (255, 140, 0)
         draw.rectangle([px-29, py-29, px+29, py+27], outline=orange, width=3)
@@ -544,9 +617,9 @@ def generate_island_image(diff_map_tuple, machine_map_tuple=(), date_key="", as_
     # ── 狙い台マーキング（優先順にピンク枠＋番号） ──
     MARK_COLOR = (255, 0, 150)
     for rank, tnum in enumerate(targets, start=1):
-        if tnum not in PDF_POSITIONS:
+        if tnum not in positions:
             continue
-        rx, ry = PDF_POSITIONS[tnum]
+        rx, ry = positions[tnum]
         px, py = int(rx * W), int(ry * H)
         mx0, my0 = px - 32, py - 32
         mx1, my1 = px + 32, py + 30
@@ -640,6 +713,21 @@ def list_sheet_titles():
     client = get_gspread_client()
     sp = client.open_by_key(SPREADSHEET_ID)
     return [ws.title for ws in sp.worksheets()]
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_date_sheet(date_title):
+    """指定日のシートをオンデマンドで読み込む。過去島図表示用。"""
+    try:
+        client = get_gspread_client()
+        sp = client.open_by_key(SPREADSHEET_ID)
+        ws = sp.worksheet(str(date_title))
+        data = ws.get_all_records()
+        if not data:
+            return None
+        result = process_df(pd.DataFrame(data))
+        return result
+    except Exception:
+        return None
 
 @st.cache_data(ttl=300)
 def load_history(max_days=10):
@@ -2013,53 +2101,153 @@ elif st.session_state.screen=='狙い台':
 elif st.session_state.screen=='島図':
     result,reasons=apply_filters(work)
     st.subheader('島図')
+
+    # 日付指定：Google Sheetsに存在する日付をすべて候補にする。
+    try:
+        all_map_dates = sorted(
+            {str(x) for x in list_sheet_titles() if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(x))},
+            reverse=True
+        )
+    except Exception:
+        all_map_dates = list(dates)
+    if not all_map_dates:
+        all_map_dates = [str(today_date)]
+
+    default_map_date = str(today_date) if str(today_date) in all_map_dates else all_map_dates[0]
+    map_date = st.selectbox(
+        '表示日',
+        all_map_dates,
+        index=all_map_dates.index(default_map_date),
+        key='map_date_selector'
+    )
+
+    map_df = df if str(map_date) == str(today_date) else load_date_sheet(map_date)
+    if map_df is None or map_df.empty:
+        st.warning(f'{map_date} の台データを読み込めません。')
+        st.stop()
+
+    # 選択日に対応する島図バージョンを解決。
+    layout_meta = resolve_layout_for_date(map_date)
+    custom_positions = load_layout_positions(layout_meta.get('positionsFile'))
+    map_positions = custom_positions or PDF_POSITIONS
+    background_file = layout_meta.get('backgroundFile') or ''
+    layout_label = layout_meta.get('label') or layout_meta.get('id') or '島図'
+    st.caption(f'島図バージョン：{layout_label}')
+    if layout_meta.get('_fallback') and str(map_date) != str(today_date):
+        st.warning('この日専用の島図履歴は未登録です。データは選択日のものですが、配置は現行島図で表示しています。')
+
     a,b,c=st.columns(3)
     period=a.selectbox('期間',['前日','3日','7日'])
     mode=b.selectbox('数値',['差枚','回転数','台番のみ'])
     zoom=c.selectbox('拡大',[1,1.5,2,3],format_func=lambda z:f'{int(z*100)}%')
-    show_rec=st.checkbox(f'おすすめ {len(result)}台を表示',value=True)
+
+    is_latest_map = str(map_date) == str(today_date)
+    show_rec=st.checkbox(
+        f'おすすめ {len(result)}台を表示',
+        value=is_latest_map,
+        disabled=not is_latest_map,
+        help='おすすめ判定は最新日基準のため、過去日表示では無効です。'
+    )
     show_picks=st.checkbox('自分の狙い台を表示',value=True)
-    st.caption(' ／ '.join(reasons) or '条件指定なし：全台が候補です。')
-    available=sorted(PDF_POSITIONS)
-    focus=st.selectbox('台番検索',[0]+available,index=([0]+available).index(st.session_state.get('map_focus',0)) if st.session_state.get('map_focus',0) in available else 0,format_func=lambda n:'全体' if n==0 else str(n))
+    if is_latest_map:
+        st.caption(' ／ '.join(reasons) or '条件指定なし：全台が候補です。')
+    else:
+        st.caption('過去日表示：差枚・回転数・機種名は選択日時点のデータを使用します。')
+
+    available=sorted(map_positions)
+    focus=st.selectbox(
+        '台番検索',
+        [0]+available,
+        index=([0]+available).index(st.session_state.get('map_focus',0)) if st.session_state.get('map_focus',0) in available else 0,
+        format_func=lambda n:'全体' if n==0 else str(n)
+    )
+
     days={'前日':1,'3日':3,'7日':7}[period]
     field='rot' if mode=='回転数' else 'diff'
+    field_col='回転数' if field=='rot' else '前日差枚'
+
+    # 選択日を起点に1/3/7日を集計する。過去日でも「その日時点」の期間になる。
+    period_dates=[d for d in all_map_dates if d <= str(map_date)][:days]
+    period_frames={}
+    for d in period_dates:
+        frame = map_df if d == str(map_date) else load_date_sheet(d)
+        if frame is not None and not frame.empty:
+            period_frames[d]=frame
+
     dm={}
     if mode!='台番のみ':
-        for _,row in work.iterrows():
+        for _,row in map_df.iterrows():
             n=int(row['台番'])
-            v=row['回転数' if field=='rot' else '前日差枚'] if days==1 else period_value(n,field,days,field=='rot')
-            if pd.notna(v):dm[n]=v
+            if days==1:
+                v=row[field_col]
+            else:
+                vals=[]
+                for d in period_dates:
+                    frame=period_frames.get(d)
+                    if frame is None:
+                        vals=[]
+                        break
+                    matched=frame[frame['台番']==n]
+                    if matched.empty:
+                        vals=[]
+                        break
+                    val=matched.iloc[0][field_col]
+                    if pd.isna(val) or not np.isfinite(val):
+                        vals=[]
+                        break
+                    vals.append(float(val))
+                v=(float(np.mean(vals)) if field=='rot' else float(sum(vals))) if len(vals)==days else np.nan
+            if pd.notna(v) and np.isfinite(v):
+                dm[n]=v
+
+    if days>1 and len(period_dates)<days:
+        st.info(f'{map_date}以前のデータが{days}日分ないため、一部の期間値は未表示です。')
+
     targets=tuple(p['num'] for p in st.session_state.picks) if show_picks else ()
-    recs=tuple(sorted(result['台番'].astype(int))) if show_rec else ()
-    missing=(set(targets)|set(recs))-set(PDF_POSITIONS)
-    if missing:st.warning('座標のない台：'+', '.join(map(str,sorted(missing))))
+    recs=tuple(sorted(result['台番'].astype(int))) if show_rec and is_latest_map else ()
+    missing=(set(targets)|set(recs))-set(map_positions)
+    if missing:
+        st.warning('この島図バージョンに座標のない台：'+', '.join(map(str,sorted(missing))))
+
     machine_names = tuple(sorted(
         (int(row['台番']), str(row['機種名']).strip())
-        for _, row in work.iterrows()
+        for _, row in map_df.iterrows()
         if pd.notna(row['台番']) and pd.notna(row['機種名'])
     ))
-    args=dict(diff_map_tuple=tuple(sorted(dm.items())),machine_map_tuple=machine_names,date_key=str(today_date),mode=field,
-        caption=f'{today_date} / {period} / {mode}',targets=targets,recommendations=recs)
-    # Existing renderer expects "rot" or "diff".
+    positions_tuple = tuple(sorted((int(n), tuple(pos)) for n,pos in map_positions.items()))
+    args=dict(
+        diff_map_tuple=tuple(sorted(dm.items())),
+        machine_map_tuple=machine_names,
+        date_key=str(map_date),
+        mode=field,
+        caption=f'{map_date} / {period} / {mode}',
+        targets=targets,
+        recommendations=recs,
+        positions_tuple=positions_tuple,
+        background_file=background_file,
+    )
+
     png=generate_island_image(**args)
     import io
     from PIL import Image
     im=Image.open(io.BytesIO(png))
     if focus:
-        x,y=PDF_POSITIONS[focus];x=int(x*im.width);y=int(y*im.height)
+        x,y=map_positions[focus];x=int(x*im.width);y=int(y*im.height)
         im=im.crop((max(0,x-230),max(0,y-230),min(im.width,x+230),min(im.height,y+230)))
         if st.button('検索台の詳細'):show_detail(focus)
+
     st.caption('オレンジ★：おすすめ ／ ピンク番号：狙い台の優先順位。保存画像は島図全体です。')
-    if zoom==1:st.image(im,use_container_width=True)
+    if zoom==1:
+        st.image(im,use_container_width=True)
     else:
         import base64
         buffer=io.BytesIO();im.save(buffer,format='PNG')
         encoded=base64.b64encode(buffer.getvalue()).decode()
         st.markdown(f'<div style="overflow:auto;max-height:80vh"><img style="width:{int(zoom*100)}%;max-width:none" src="data:image/png;base64,{encoded}"></div>',unsafe_allow_html=True)
-    st.download_button('PNG保存',png,f'island_{today_date}.png','image/png')
+
+    st.download_button('PNG保存',png,f'island_{map_date}.png','image/png')
     if st.button('PDFを生成'):
-        st.download_button('PDF保存',generate_island_image(**args,as_pdf=True),f'island_{today_date}.pdf','application/pdf')
+        st.download_button('PDF保存',generate_island_image(**args,as_pdf=True),f'island_{map_date}.pdf','application/pdf')
 
 else:
     st.subheader('全台データ')
